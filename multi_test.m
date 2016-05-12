@@ -1,6 +1,6 @@
 %% Relatively comprehensive test
 clear 
-k = 2;
+k = 3;
 a = matexp(eye(k));
 bs = symreal('b',[k,k]);
 qs = symreal('q',[k,k]);
@@ -13,13 +13,15 @@ mf = {
         @(a,b,q) a*(2+b*q),
         @(a,b,q) a*(2+b'*q),
         @(a,b,q) trace(a*(2+b*q)),
+        @(a,b,q) b.^3, %OK
+        @(a,b,q) b^2, % OK
         @(a,b,q) trace(b.^3), % OK but adjoint(q) should be ZERO because untouched
-        @(a,b,q) inv(b), % wrong
-        %@(a,b,q) a*(2+inv(b)*q), % wrong
-        %FAIL MUPAD @(a,b,q) b^2
-        %FAIL MUPAD @(a,b,q) b.^3,
-        %@(a,b,q) trace(b.^3)+q, % crashes
+        %@(a,b,q) inv(b), % wrong
+        %@(a,b,q) a*(2+inv(b)*q), % wrong        
+        %@(a,b,q) trace(b.^3)+q,
+        %@(a,b,q) ones(k,k)*trace(b.^3)+q, % crashes because we have a scalar solution 
     };
+mf = {@(a,b,q) ones(k,k)*trace(b.^3)+q};
 success = zeros(length(mf),2);
 for I=1:length(mf)
     disp(mf{I})

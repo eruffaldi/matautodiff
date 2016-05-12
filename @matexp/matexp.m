@@ -67,8 +67,23 @@ classdef matexp < handle
             % scalar functions f(X) =>  diag(vec(df(X)))
             switch(this.aop)
                 case '+'
-                    incadjoint(ops{1},A);
-                    incadjoint(ops{2},A);
+                    % f(X)+g(X)
+                    % f(X) is scalar and g(X) is not we need to replicate
+                    L = value(ops{1});
+                    R = value(ops{2});                    
+%                     if length(L) == 1 & length(R) ~= 1
+%                         % as if we have: f(X)*ones(m,n) + g(X)
+%                         % this means: in the product rule: L=f(X)
+%                         % R=ones(m,n)
+%                         % A*kron(ones(m,n)',eye(m))=A*kron(ones(m,n),eye(m))
+%                         m = size(R,1);
+%                         n = size(R,2);
+%                         incadjoint(ops{1},A*kron(ones(m,n),eye(m)));
+%                         incadjoint(ops{2},A);
+%                     else
+                        incadjoint(ops{1},A);
+                        incadjoint(ops{2},A);
+                   % end
                 case 'u-'
                     incadjoint(ops{1},-A);
                 case '-'
