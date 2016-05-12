@@ -45,59 +45,7 @@ J_q = adjoint(q);
 J_b-J_bs
 J_q-J_qs
 
-%% Relatively comprehensive test
-clear 
-a = matexp(eye(3));
-bs = symreal('b',[3,3]);
-qs = symreal('q',[3,3]);
-b = matexp('b',bs);
-q = matexp('q',qs);
 
-
-mf = {
-        @(a,b,q) a*(2+b*q),
-        @(a,b,q) a*(2+b'*q),
-        @(a,b,q) trace(a*(2+b*q)),
-        @(a,b,q) trace(b.^3), % OK but adjoint(q) should be ZERO because untouched
-        @(a,b,q) inv(b), % wrong
-        %@(a,b,q) a*(2+inv(b)*q), % wrong
-        %FAIL MUPAD @(a,b,q) b^2
-        %FAIL MUPAD @(a,b,q) b.^3,
-        %@(a,b,q) trace(b.^3)+q, % crashes
-    };
-success = zeros(length(mf),2);
-for I=1:length(mf)
-    disp(mf{I})
-    fm = mf{I}(a,b,q);
-    fs = mf{I}(value(a),value(b),value(q));
-    J_bs = jacobian(fs(:),bs(:));
-    J_qs = jacobian(fs(:),qs(:));
-    update(fm);
-    simplify(value(fm)==fs)
-
-    %   vars = collectvars(fm)
-    resetadjoint(b,0); % not needed usually but yes for this test
-    resetadjoint(q,0); % not needed usually but yes for this test
-    autodiff(fm);
-    J_b = adjoint(b);
-    J_q = adjoint(q);
-
-    wb = J_b-J_bs
-    wq = J_q-J_qs
-    try
-        double(wb)
-        success(I,1) = all(all(wq) == 0);
-    catch
-        warning('Jacobian b is wrong');
-    end
-    try
-        double(wq)
-        success(I,2) = all(all(wq) == 0);
-    catch
-        warning('Jacobian q is wrong');
-    end
-end
-success
 %% analyze specifically X.^k
 clc
 clear

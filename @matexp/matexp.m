@@ -139,8 +139,13 @@ classdef matexp < handle
                 case 'trace'  
                     incadjoint(ops{1},A*reshape(eye(length(ops{1}.avalue)),1,[]));
 %                 case 'vec' % vectorization
-                 case 'inv' % inversion
-                     % Note fast version: 
+                 case 'inv' 
+                     % S version for trace: vec'(A) (-kron(V,V')) = vec'(-VAV)
+                     % for jfd.pdf there is no negative sign ERROR
+                     % for dmb it should be: - kron(V',V)
+                     %
+                     % note: kron is distributive against transposition =>
+                     % transpose kron(V,V') == kron(V',V)
                      incadjoint(ops{1},-A*kron(V,V'));
                 case 'transpose'
                     % A is [kl, mn] where kl is the final output
