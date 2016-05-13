@@ -176,7 +176,52 @@ classdef matexp < handle
                     q = cos(ops{1}.avalue);
                     incadjoint(ops{1},A*diag(q(:)));
                 case 'kron'
-                    error('kron not implemented')
+                    L = ops{1}.avalue;
+                    R = ops{2}.avalue;
+                    % kron(A,B) = P kron(B,A) Q
+                    % kron(A,B) means expand 
+                    if ops{1}.avarcount > 0               
+                        % kronout = numel(L)*numel(R)
+                        % adjoint A=[outsize, kronout] X=[kronout, numel(R)]
+                        %      lr lc rr rc,   ll lc == 
+                        % TODO finde: P kron(L,?) Q  with P,Q permutations
+                        assert(size(A,2)==numel(L)*numel(R),'kron input adjoint');
+                        q = zeros(size(A,2),numel(L),class(R));
+                        q0 = zeros(size(R,2)*size(L,1)*size(R,1),size(L,1),class(R));
+                        
+                        for I=1:size(R,2)
+                            for J=1:size(L,1)
+                                for K=1:size(R,1)
+                                    q0((I-1)*size(R,1)*size(L,1)+(J-1)*size(R,1)+(K-1)+1,(J-1)+1) = R(K,I);
+                                end
+                            end
+                        end
+                        % replicate
+                        for I=1:size(L,2)
+                            q((I-1)*size(q0,1)+1:I*size(q0,1),(I-1)*size(L,1)+1:I*size(L,1)) = q0;
+                        end
+    
+                        incadjoint(ops{1},A*q);
+
+                    end
+                    if ops{2}.avarcount > 0      
+                        % adjoint A=[outsize, kronout] X=[kronout, numel(L)]
+                        %      lr lc rr rc,   lr lc 
+                        % TODO finde: P kron(L,?) Q  with P,Q permutations
+                        assert(size(A,2)==numel(L)*numel(R),'kron input adjoint');
+                        q = zeros(size(A,2),numel(R),class(L));
+                        bx = size(R,1);
+                        by = size(R,1)*size(L,1)*size(R,2);
+                        for I=1:size(R,2) % along x: each is size(R,1)
+                            for J=1:size(L,2) % along y: each is: size(R,1)*size(L,1)*size(R,2)
+                                for K=1:size(L,1) % long y: each is size(R,1)
+                                    ki = (J-1)*by+1+(K-1)*bx+(I-1)*bx*size(L,1);
+                                    q(ki:ki+bx-1,(I-1)*bx+1:(I-1)*bx+bx) = L(K,J)*eye(bx);
+                                end
+                            end
+                        end                        
+                        incadjoint(ops{2},A*q);
+                    end
                 case 'power'
                     assert(ops{2}.avarcount == 0,'power needs to be constant');
                     assert(numel(ops{2}.avalue) == 1,'power needs to be scalar');
@@ -256,12 +301,22 @@ classdef matexp < handle
                     
                     incadjoint(ops{1},A*Tmn);
                 case 'vec'
-                    error('Unimplemented vec')
+                    % expression from [m,n] to [mn,1] 
+                    % adjoint receives [outsize,mn] 
+                    incadjoint(ops{1},A);
                 case 'diag'
-                    error('Unimplemented diag')
-                case 'kron'
-                    % d(Y kron Z) = Y kron dZ + dY kron Z
-                    error('Unimplemented kron')
+                    % expression from [q,1] to [q,q]
+                    % adjoint receives [outsize,qq] to [q,1] via a matrix [qq,q]
+                    % 
+                    n = length(V);
+                    q = zeros(n*n,n);   
+                    % OPTIMIZE ME
+                    J = 1;
+                    for I=1:n
+                        q(J,I) = 1;
+                        J = J +n+1;
+                    end
+                    incadjoint(ops{1},A*q);
                 case ''  % nothing
                     return
                 otherwise

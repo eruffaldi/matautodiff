@@ -1,7 +1,11 @@
 For Diff
-- X^k k>2
+- none?
 
 For Hessian
 - diff diag
 - diff vec
 - diff kron
+
+Optimize
+- diag
+- X^k k > 2

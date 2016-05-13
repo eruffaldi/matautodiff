@@ -30,6 +30,8 @@ mf ={        @(a,b,q) a*(2+b*q)};
 mf = {@(a,b,q) inv(b)};
 mf = amf;
 mf = {@(a,b,q) log(det(b))};
+mf = {@(a,b,q) trace(diag(q(:)))};
+mf = {@(a,b,q) kron(b,q)}; % [k1,k1] kr [k1,k2] = [k1k1,k1k2] => [k1^3 k2]
 success = zeros(length(mf),2);
 for I=1:length(mf)
     disp(mf{I})
