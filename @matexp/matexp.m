@@ -196,6 +196,8 @@ classdef matexp < handle
                      switch ops{2}.avalue
                          case 1
                              incadjoint(ops{1},A);
+                         case -1
+                             incadjoint(ops{1},-A*kron(V,V'));
                         case 2 
                             X = ops{1}.avalue;
                             Q = eye(length(X));
@@ -204,24 +206,28 @@ classdef matexp < handle
                             X = ops{1}.avalue;
                             incadjoint(ops{1},A*(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)));
                          otherwise
-                            error('not implemented generic power');%                             
+                            error('not implemented generic matrix power exponent');%                             
                      end
 %                 case 'logdet'
 %                     incadjoint(ops{1},inv(V)');
-%                 case 'det'
-%                     assert('Not implemented autodiff of det');
+                 case 'det'
+                     q = inv(value(ops{1}))';
+                    incadjoint(ops{1},A*V*q(:)');
+                case 'log'
+                    assert(strcmp(ops{1}.aop,'det'),'Only log det supported');
+                    incadjoint(ops{1},A/det(ops{1}.avalue)); % log det (X) = (X^-1'):'                    
+                case 'logdet'
+                    q = inv(value(ops{1}))';
+                    incadjoint(ops{1},A*q(:)'); % log det (X) = (X^-1'):'                    
                 case 'trace'                     
                     q = (eye(length(ops{1}.avalue)));  % was colum(.)'
                     incadjoint(ops{1},A*q(:)');
 %                 case 'vec' % vectorization
                  case 'inv' 
                      % S version for trace: vec'(A) (-kron(V,V')) = vec'(-VAV)
-                     % for jfd.pdf there is no negative sign ERROR
+                     % in jfd.pdf there is no negative sign 
                      % for dmb it should be: - kron(V',V)
-                     %
-                     % note: kron is distributive against transposition =>
-                     % transpose kron(V,V') == kron(V',V)
-                     incadjoint(ops{1},-A*kron(V,V'));
+                     incadjoint(ops{1},-A*kron(V',V));
                 case 'transpose'
                     % A is [kl, mn] where kl is the final output
                     % V is [mn, mn]
@@ -249,6 +255,13 @@ classdef matexp < handle
                     Tmn = Tmn';
                     
                     incadjoint(ops{1},A*Tmn);
+                case 'vec'
+                    error('Unimplemented vec')
+                case 'diag'
+                    error('Unimplemented diag')
+                case 'kron'
+                    % d(Y kron Z) = Y kron dZ + dY kron Z
+                    error('Unimplemented kron')
                 case ''  % nothing
                     return
                 otherwise
@@ -402,6 +415,8 @@ classdef matexp < handle
                     this.avalue = sin(this.aoperands{1}.avalue);
                 case 'logdet'
                     this.avalue = log(det(this.aoperands{1}.avalue));
+                case 'kron'
+                    this.avalue = kron(this.aoperands{1}.avalue,this.aoperands{2}.avalue);
                 case 'det'
                     this.avalue = det(this.aoperands{1}.avalue);
                 case 'diag'
@@ -477,6 +492,13 @@ classdef matexp < handle
             r = matexp([],'power',{a,b});
         end      
         
+        function r = subsref(a,S)
+            assert(strcmp(S.type,'()'),'Only (:) supported');
+            assert(iscell(S.subs) & numel(S) == 1,'Only (:) supported');
+            assert(strcmp(S.subs{1},':'),'Only (:) supported');
+            r = matexp([],'vec',{a});
+        end
+        
         function r = mpower(a,b)
             if ~isa(a,'matexp')
                 a = matexp(a);
@@ -501,6 +523,16 @@ classdef matexp < handle
                 
         function r = diag(this)
             r = matexp([],'diag',{this});
+        end
+        
+        function r = kron(a,b)
+            if ~isa(a,'matexp')
+                a = matexp(a);
+            end
+            if ~isa(b,'matexp')
+                b = matexp(b);
+            end
+            r = matexp([],'kron',{a,b});
         end
         
         function r = log(this)

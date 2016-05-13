@@ -156,7 +156,10 @@ Jv = double(subs(J,ts,Xc));
 
 assert(all(abs(Jv-Q(:)')<1e-3),'Jv corresponds to manual');
 assert(all(abs(Jv-aX(:)')<1e-3),'Jv corresponds to auto');
-
+%%
+clear all
+q = matexp(10);
+q(:)
 %% Example from the case of our AR Non linear
 % Dimensioning
 m=2;

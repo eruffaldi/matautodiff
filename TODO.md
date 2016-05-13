@@ -1,11 +1,7 @@
 For Diff
-- fix inv
-- fix .* scalar expansion
-- solve the issue of the initial value (currently scalar) vs 
+- X^k k>2
 
 For Hessian
-- derive diag(col)
-- derive vec
-- implement subsref with (:) only
-- provide kron
-- derive kron
+- diff diag
+- diff vec
+- diff kron
