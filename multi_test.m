@@ -1,27 +1,34 @@
 %% Relatively comprehensive test
 clear 
-k = 3;
-a = matexp(eye(k));
-bs = symreal('b',[k,k]);
-qs = symreal('q',[k,k]);
+k1 = 2;
+k2 = 3;
+a = matexp(eye(k1));
+bs = symreal('b',[k1,k1]);
+qs = symreal('q',[k1,k2]);
 b = matexp('b',bs);
 q = matexp('q',qs);
 
 
-mf = {
-        @(a,b,q) b', % wrong
-        @(a,b,q) a*(2+b*q),
-        @(a,b,q) a*(2+b'*q),
-        @(a,b,q) trace(a*(2+b*q)),
+amf = {
+        @(a,b,q) b', % OK
+        @(a,b,q) a*(2+b*q), %WRONG
+        @(a,b,q) a*(2+b'*q),% WRONG
+        @(a,b,q) trace(a*(2+b)), %OK
         @(a,b,q) b.^3, %OK
         @(a,b,q) b^2, % OK
         @(a,b,q) trace(b.^3), % OK but adjoint(q) should be ZERO because untouched
         %@(a,b,q) inv(b), % wrong
         %@(a,b,q) a*(2+inv(b)*q), % wrong        
-        %@(a,b,q) trace(b.^3)+q,
-        %@(a,b,q) ones(k,k)*trace(b.^3)+q, % crashes because we have a scalar solution 
+        @(a,b,q) trace(b.^3)+q, %OK
+        @(a,b,q) ones(k1,k2)*trace(b.^3)+q, % OK crashes because we have a scalar solution 
     };
-mf = {@(a,b,q) ones(k,k)*trace(b.^3)+q};
+mf = {@(a,b,q) trace(b.^3)*ones(k1,k2)+q};
+mf = {@(a,b,q) a.*b};
+mf = {@(a,b,q) trace(b.^3)+q};
+mf = {@(a,b,q) ones(k1,k2)*trace(b.^3)+q};
+mf = amf;
+mf ={        @(a,b,q) a*(2+b*q)};
+
 success = zeros(length(mf),2);
 for I=1:length(mf)
     disp(mf{I})
@@ -38,18 +45,24 @@ for I=1:length(mf)
     autodiff(fm);
     J_b = adjoint(b);
     J_q = adjoint(q);
+    
+    % TODO: if J_b is 1 then means IDENTITY not ONES
 
     wb = simplify(J_b-J_bs)
     wq = simplify(J_q-J_qs)
     try        
-        success(I,1) = all(all(double(wb)) == 0);
+        success(I,1) = all(all(double(wb) == 0));
     catch
         warning('Jacobian b is wrong');
     end
     try
-        success(I,2) = all(all(double(wq)) == 0);
+        success(I,2) = all(all(double(wq) == 0));
     catch
         warning('Jacobian q is wrong');
     end
+    J_b
+    J_bs
+    J_q
+    J_qs
 end
 success

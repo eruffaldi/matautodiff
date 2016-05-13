@@ -47,7 +47,7 @@ classdef matexp < handle
             end
             % the root performs the reset of the adjoints
                 resetadjoint(this,0);
-                this.aadjoint = 1; 
+                this.aadjoint = eye(numel(this.avalue)); 
                 mautodiff(this);
                 %if length(this.avalue) == 1
                 % scalar path
@@ -66,12 +66,14 @@ classdef matexp < handle
             
             % scalar functions f(X) =>  diag(vec(df(X)))
             switch(this.aop)
-                case '+'
+                case {'+','-'}
                     % f(X)+g(X)
                     % f(X) is scalar and g(X) is not we need to replicate
                     L = value(ops{1});
-                    R = value(ops{2});                    
-%                     if length(L) == 1 & length(R) ~= 1
+                    R = value(ops{2});         
+                    Al = A;
+                    Ar = A;
+                    % SPECIAL: L or R scalar => adapt A to REPLICATE
 %                         % as if we have: f(X)*ones(m,n) + g(X)
 %                         % this means: in the product rule: L=f(X)
 %                         % R=ones(m,n)
@@ -80,44 +82,99 @@ classdef matexp < handle
 %                         n = size(R,2);
 %                         incadjoint(ops{1},A*kron(ones(m,n),eye(m)));
 %                         incadjoint(ops{2},A);
-%                     else
-                        incadjoint(ops{1},A);
-                        incadjoint(ops{2},A);
-                   % end
+%                     else                    
+
+                     if length(L) == 1
+                         if length(R) == 1
+                             % both
+                         else
+                             % L is scalar: propagate size of R to L, that
+                             % is: column(eye(numel(R),value=L)) 
+                             % A is [outsize, numel(R)]
+                             % [outsize, numel(R)] * [numel(R), 1]
+                            Al = A*ones(numel(R),1);
+                         end
+                     elseif length(R) == 1
+                          % R is scalar: propagate size of L to R
+                          Ar = A*ones(numel(L),1);
+                     end
+                    if ops{1}.avarcount > 0
+                        incadjoint(ops{1},Al);
+                    end
+                    if ops{2}.avarcount > 0                    
+                        if this.aop == '-'
+                            Ar = -Ar;
+                        end
+                        incadjoint(ops{2},Ar);
+                    end
                 case 'u-'
                     incadjoint(ops{1},-A);
-                case '-'
-                    incadjoint(ops{1},A);
-                    incadjoint(ops{2},-A);               
                 case '.*'
                     % L R
                     L = ops{1}.avalue;
                     R = ops{2}.avalue;
                     Rt = R';
-                    incadjoint(ops{1},A*diag(Rt(:)));
-                    incadjoint(ops{1},A*diag(L(:)));                    
+                    nl = size(V,1);
+                    nr = size(V,2);
+                    if ops{1}.avarcount > 0
+                        if length(L) == 1 & length(R) > 1
+                            % enforce enlarge L
+                            Al = A*diag(R(:))*ones(nl*nr,1); 
+                        else
+                            Al = A*diag(Rt(:));                        
+                        end
+                        incadjoint(ops{1},Al);
+                    end
+                    if ops{2}.avarcount > 0
+                    if length(R) == 1 & length(L) > 1
+                        % enforce enlarge R
+                        error('Need enlarge L in .*')
+                        Ar = A*diag(L(:))*ones(nl*nr,1); 
+                    else
+                        Ar = A*diag(L(:));     
+                    end
+                    incadjoint(ops{2},Ar);              
+                    end
                 case '*'
-                    % L R
+                    % L R   [nl,q] [q,nr] -> [nl,nr]
                     L = ops{1}.avalue;
                     R = ops{2}.avalue;
-                    k = size(V,1);
-                    l = size(V,2);
+                    nl = size(V,1); 
+                    nr = size(V,2);
+                    
                     %Note for fast version: 
-                    % vec'(A)(I kron R')=vec'(R A I) 
-                    % vec'(A)(L kron I) = vec'(I A L)
-                    %dmb ref:
-                    % (R' kron I)
-                    % (I kron L)
-                    %incadjoint(ops{1},A*kron(eye(k),R')); % by derivative of op1
-                    %incadjoint(ops{2},A*kron(L,eye(l))); % by derivative of op2
-                    incadjoint(ops{1},A*kron(R',eye(k))); % by derivative of op1
-                    incadjoint(ops{2},A*kron(eye(l),L)); % by derivative of op2
+                    % LEFT:  vec'(A)(I kron R')   = vec'(R A I) 
+                    % RIGHT: vec'(A)(L kron I )   = vec'(I A L)
+                    % kron([a,b],[c,d]) is [ac,bd]
+                    if ops{1}.avarcount > 0
+                        if length(L) == 1 & length(R) > 1
+                            % R is [nl,nr]
+                            % d y/dx = [a b11  a b12; a b21 a b22; a b31
+                            % ab32] = kron(nl,R) * [nl nl, nl nr] [nl*nr,1 == kron(nl,1,nr,1)] a/dx
+                            %
+                            Al = A*diag(R(:))*ones(nl*nr,1);   
+                        else
+                            Al = A*kron(eye(nl),R');                            
+                        end
+                        incadjoint(ops{1},Al); % by derivative of op2
+                    end
+                    if ops{2}.avarcount > 0      
+                        Ar = A*kron(L,eye(nr));
+                        if length(R) == 1 & length(L) > 1
+                            % L*eye(size(L,2))*r
+                                Ar = A*diag(L(:))*ones(nl*nr,1);   
+                        end
+                        % l r   q r
+                        incadjoint(ops{2},Ar); % by derivative of op2
+                    end
                 case 'cos'
                     q = sin(ops{1}.avalue);
                     incadjoint(ops{1},-A*diag(q(:)));
                 case 'sin'
                     q = cos(ops{1}.avalue);
                     incadjoint(ops{1},A*diag(q(:)));
+                case 'kron'
+                    error('kron not implemented')
                 case 'power'
                     assert(ops{2}.avarcount == 0,'power needs to be constant');
                     assert(numel(ops{2}.avalue) == 1,'power needs to be scalar');
@@ -151,8 +208,9 @@ classdef matexp < handle
 %                     incadjoint(ops{1},inv(V)');
 %                 case 'det'
 %                     assert('Not implemented autodiff of det');
-                case 'trace'  
-                    incadjoint(ops{1},A*reshape(eye(length(ops{1}.avalue)),1,[]));
+                case 'trace'                     
+                    q = column(eye(length(ops{1}.avalue)))';
+                    incadjoint(ops{1},A*q);
 %                 case 'vec' % vectorization
                  case 'inv' 
                      % S version for trace: vec'(A) (-kron(V,V')) = vec'(-VAV)

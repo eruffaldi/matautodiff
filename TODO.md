@@ -1,6 +1,7 @@
 For Diff
 - fix inv
-- fix test cases
+- fix .* scalar expansion
+- solve the issue of the initial value (currently scalar) vs 
 
 For Hessian
 - derive diag(col)
