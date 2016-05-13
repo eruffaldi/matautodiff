@@ -17,7 +17,7 @@ amf = {
         @(a,b,q) b.^3, %OK
         @(a,b,q) b^2, % OK
         @(a,b,q) trace(b.^3), % OK but adjoint(q) should be ZERO because untouched
-        %@(a,b,q) inv(b), % wrong
+        @(a,b,q) inv(b), % wrong
         %@(a,b,q) a*(2+inv(b)*q), % wrong        
         @(a,b,q) trace(b.^3)+q, %OK
         @(a,b,q) ones(k1,k2)*trace(b.^3)+q, % OK crashes because we have a scalar solution 
@@ -26,8 +26,9 @@ mf = {@(a,b,q) trace(b.^3)*ones(k1,k2)+q};
 mf = {@(a,b,q) a.*b};
 mf = {@(a,b,q) trace(b.^3)+q};
 mf = {@(a,b,q) ones(k1,k2)*trace(b.^3)+q};
-mf = amf;
 mf ={        @(a,b,q) a*(2+b*q)};
+mf = {@(a,b,q) inv(b)};
+mf = amf;
 
 success = zeros(length(mf),2);
 for I=1:length(mf)

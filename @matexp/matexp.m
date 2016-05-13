@@ -154,12 +154,14 @@ classdef matexp < handle
                             %
                             Al = A*diag(R(:))*ones(nl*nr,1);   
                         else
-                            Al = A*kron(eye(nl),R');                            
+                            %Al = A*kron(eye(nl),R');    
+                            Al = A*kron(R',eye(nl));
                         end
                         incadjoint(ops{1},Al); % by derivative of op2
                     end
                     if ops{2}.avarcount > 0      
-                        Ar = A*kron(L,eye(nr));
+                        %Ar = A*kron(L,eye(nr));
+                        Ar = A*kron(eye(nr),L);
                         if length(R) == 1 & length(L) > 1
                             % L*eye(size(L,2))*r
                                 Ar = A*diag(L(:))*ones(nl*nr,1);   
@@ -209,8 +211,8 @@ classdef matexp < handle
 %                 case 'det'
 %                     assert('Not implemented autodiff of det');
                 case 'trace'                     
-                    q = column(eye(length(ops{1}.avalue)))';
-                    incadjoint(ops{1},A*q);
+                    q = (eye(length(ops{1}.avalue)));  % was colum(.)'
+                    incadjoint(ops{1},A*q(:)');
 %                 case 'vec' % vectorization
                  case 'inv' 
                      % S version for trace: vec'(A) (-kron(V,V')) = vec'(-VAV)
