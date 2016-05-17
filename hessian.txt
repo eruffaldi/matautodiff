@@ -54,8 +54,11 @@ NOTE: we are not following classic matrix operations but we work with the vector
 	C = A * B     =>  C: = kron (B',Ik) A: = kron(Im,A) B:
 	C = A * B * C =>  C: = kron (C',A) B: = kron (In, AB) C: = kron(C'B',Ik) A:
 	C = A'        =>  C: = Tmn A:
+	C = diag(A)   =>  C: = Snn A:     # Snn select the elements that are in the diagonal
+	C = trace(A)  =>  C: = ones(1,n) Snn A:
+	...
 
-	we know that
+	using the above we obtain some formulation that highlight the term on the right:
 
 	d(AB): = kron(Im,A) dB: + kron(B',Ik) dA:
 	d(kron(A,B)): = kron(A,dB)+kron(dA,B) = Q(A) dB: + Q(B) dA: with Q special matrix
@@ -63,5 +66,4 @@ NOTE: we are not following classic matrix operations but we work with the vector
 		se A=(YX)' B=ZX
 		dA = Tmn kron(Y,I) dX:
 		dB = kron(Z,I) dX:
-		Q(Im) Tmn kron(Y,I) dX: kron(Z,I) dX: + Q(Ik) Tmn kron(Z,I) dX: kron(Y,I) dX: ==> A'D+D'A
-		problema: dX: kron(Z,I) dX: == we have dX: on sides
+		Q(Im) Tmn kron(Y,I) dX: kron(Z,I) dX: + Q(Ik) Tmn kron(Z,I) dX: kron(Y,I) dX: ==> Y'Z+Z'Y

@@ -547,7 +547,7 @@ classdef matexp < handle
             nl = size(V,1); 
             nr = size(V,2);
             Hl = [];
-            hr = [];
+            Hr = [];
             
             %Note for fast version: 
             % LEFT:  vec'(A)(I kron R')   = vec'(R A I) 
