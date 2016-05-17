@@ -1,5 +1,5 @@
 % Matrix Expression Class for Automatic Differentiation
-% Emanuele Ruffaldi 2016
+% Emanuele Ruffaldi 2016, Scuola Superiore Sant'Anna
 %
 % Provides Reverse-Mode Automatic Differentiation of Matrices
 classdef matexp < handle
@@ -8,6 +8,7 @@ classdef matexp < handle
         aname
         avalue
         aadjoint
+        ahessian
         aop
         aoperands
         avarcount
@@ -41,98 +42,20 @@ classdef matexp < handle
             end
         end
         
-        function autodiff(this)
+        function autodiff(this,c2)
+            if nargin == 1
+                c2 = 0;
+            end
             if isempty(this.avalue)
                 update(this);
             end
             resetadjoint(this,0);
             this.aadjoint = eye(numel(this.avalue)); 
-            mautodiff(this);
-        end
-        
-
-
-%         
-%         % special case when output is trace(F(X)) and we have no fully matrix
-%         % operations (TO BE VERIFIED) corresponds to ADTalk.pdf and takes
-%         % advantage of special properties of the trace
-%         function sautodiff(this)
-%             
-%             ops = this.aoperands;
-%             A = this.aadjoint;
-%             V = this.avalue; % this value
-%             
-%             % by operation, increment adjoint of children
-%             switch(this.aop)
-%                 case '+'
-%                     incadjoint(ops{1},A);
-%                     incadjoint(ops{2},A);
-%                 case '-'
-%                     incadjoint(ops{1},A);
-%                     incadjoint(ops{2},-A);
-%                 case '*'
-%                     incadjoint(ops{1},ops{2}.avalue*A); % by derivative of op1
-%                     incadjoint(ops{2},A*ops{1}.avalue); % by derivative of op2
-%                 case 'mpower'
-%                     assert(ops{2}.avarcount == 0,'power needs to be constant');
-%                     switch ops{2}.avalue
-%                         case 1
-%                             % X^1 == X
-%                             incadjoint(ops{1},A);
-%                         case 2 % FIX ME
-%                             X = ops{1}.avalue;
-%                             Q = eye(length(X));
-%                             incadjoint(ops{1},A*(kron(Q,X)+kron(X',Q)));
-%                         case 3 % FIX ME
-%                             X = ops{1}.avalue;
-%                             incadjoint(ops{1},A*(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)));
-%                         otherwise
-%                             error('not implemented generic power');
-%                     end
-%                 case 'power'
-%                     assert(ops{2}.avarcount == 0,'power needs to be constant');
-%                     switch ops{2}.avalue
-%                         case 1
-%                             % X^1 == X
-%                             incadjoint(ops{1},A);
-%                         case 2
-%                             % same as X*X = X*A+A*X
-%                             incadjoint(ops{1},2*A*ops{1}.avalue);
-%                         case -1
-%                             incadjoint(ops{1},-V*A*V);                            
-%                         otherwise
-%                             incadjoint(ops{1},ops{2}.avalue*diag(ops{1}.avalue.^(ops{2}.avalue-1)));
-%                     end
-%                 case 'logdet'
-%                     q = inv(V)';
-%                     incadjoint(ops{1},q(:)');
-%                 case 'det'
-%                     assert('Not implemented autodiff of det');
-%                 case 'trace'  
-%                     % ac.uk says: eye(n)(:)'
-%                     % not totally correct
-%                     
-%                     incadjoint(ops{1},A); %eye(length(ops{1}.avalue))*A);
-%                 case 'vec' % vectorization
-%                 case 'inv' % inversion
-%                     incadjoint(ops{1},-V*A*V);
-%                 case 'transpose'
-%                     incadjoint(ops{1},A');
-%                 case ''  % nothing
-%                     return
-%                 otherwise
-%                     error(['Unimplemented ' this.aop]);
-%             end
-%             this.aoperands = ops;
-%             
-%             % then continue the descent ONLY if meaningful
-%             for I=1:length(this.aoperands)
-%                 if this.aoperands{I}.avarcount > 0
-%                     sautodiff(this.aoperands{I});
-%                 end
-%             end
-%         end
-        
+            if c2
+                this.ahessian = 1;
+            end
+            mautodiff(this,c2);
+        end    
         
         % collects the variables present in the expression tree
         function r = collectvars(this)
@@ -156,6 +79,7 @@ classdef matexp < handle
             for I=1:length(this.aoperands)
                 resetadjoint(this.aoperands{I},x);
             end
+            this.ahessian = x;
             this.aadjoint = x;
         end
 
@@ -350,12 +274,19 @@ classdef matexp < handle
             r = this.aadjoint;
         end
        
-        
+        % returns adjoint
+        function r = hessian(this)
+            r = this.ahessian;
+        end
+
         function this = incadjoint(this,value)
             this.aadjoint = this.aadjoint + value;
-            
         end
         
+        function this = inchessian(this,value)
+            this.ahessian = this.ahessian + value;
+        end
+
         % sets the value for the constant or variable ones
         function set(this,value)
             assert(isempty(this.aop));
@@ -364,7 +295,7 @@ classdef matexp < handle
     end
     methods (Access=private)
 
-        function mautodiff(this)
+        function mautodiff(this,c2)
             
             ops = this.aoperands;
             A = this.aadjoint;
@@ -375,95 +306,34 @@ classdef matexp < handle
                 case {'+','-'}
                     % f(X)+g(X)
                     % f(X) is scalar and g(X) is not we need to replicate
-                    L = value(ops{1});
-                    R = value(ops{2});         
-                    Al = A;
-                    Ar = A;
-          
-                     if length(L) == 1
-                         if length(R) == 1
-                             % both -> do nothing
-                         else
-                             % L is scalar: propagate size of R to L, that
-                             % is: column(eye(numel(R),value=L)) 
-                             % A is [outsize, numel(R)]
-                             % [outsize, numel(R)] * [numel(R), 1]
-                            Al = A*ones(numel(R),1);
-                         end
-                     elseif length(R) == 1
-                          % R is scalar: propagate size of L to R
-                          Ar = A*ones(numel(L),1);
-                     end
-                    if ops{1}.avarcount > 0
-                        incadjoint(ops{1},Al);
+                    [Al,Ar] = matexp.dsum(ops{1}.avalue,ops{2}.avalue,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    if ~isempty(Al)
+                        incadjoint(ops{1},A*Al);
                     end
-                    if ops{2}.avarcount > 0                    
+                    if ~isempty(Ar)                       
                         if this.aop == '-'
                             Ar = -Ar;
                         end
-                        incadjoint(ops{2},Ar);
+                        incadjoint(ops{2},A*Ar);
                     end
                 case 'u-'
                     incadjoint(ops{1},-A);
                 case '.*'
-                    % L R
-                    L = ops{1}.avalue;
-                    R = ops{2}.avalue;
-                    Rt = R';
-                    nl = size(V,1);
-                    nr = size(V,2);
-                    if ops{1}.avarcount > 0
-                        if length(L) == 1 & length(R) > 1
-                            % enforce enlarge L
-                            Al = A*diag(R(:))*ones(nl*nr,1); 
-                        else
-                            Al = A*diag(Rt(:));                        
-                        end
-                        incadjoint(ops{1},Al);
+                    [Al,Ar] = matexp.dsmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    if ~isempty(Al)
+                        incadjoint(ops{1},A*Al);
                     end
-                    if ops{2}.avarcount > 0
-                    if length(R) == 1 & length(L) > 1
-                        % enforce enlarge R
-                        error('Need enlarge L in .*')
-                        Ar = A*diag(L(:))*ones(nl*nr,1); 
-                    else
-                        Ar = A*diag(L(:));     
-                    end
-                    incadjoint(ops{2},Ar);              
+                    if ~isempty(Ar)
+                        incadjoint(ops{2},A*Ar);
                     end
                 case '*'
+                    [Al,Ar] = matexp.dmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
                     % L R   [nl,q] [q,nr] -> [nl,nr]
-                    L = ops{1}.avalue;
-                    R = ops{2}.avalue;
-                    nl = size(V,1); 
-                    nr = size(V,2);
-                    
-                    %Note for fast version: 
-                    % LEFT:  vec'(A)(I kron R')   = vec'(R A I) 
-                    % RIGHT: vec'(A)(L kron I )   = vec'(I A L)
-                    % kron([a,b],[c,d]) is [ac,bd]
-                    if ops{1}.avarcount > 0
-                        if length(L) == 1 & length(R) > 1
-                            % R is [nl,nr]
-                            % d y/dx = [a b11  a b12; a b21 a b22; a b31
-                            % ab32] = kron(nl,R) * [nl nl, nl nr] [nl*nr,1 == kron(nl,1,nr,1)] a/dx
-                            %
-                            Al = A*diag(R(:))*ones(nl*nr,1);   
-                        else
-                            %Al = A*kron(eye(nl),R');    
-                            Al = A*kron(R',eye(nl));
-                        end
-                        incadjoint(ops{1},Al); % by derivative of op2
+                    if ~isempty(Al)
+                        incadjoint(ops{1},A*Al);
                     end
-                    if ops{2}.avarcount > 0      
-                        %Ar = A*kron(L,eye(nr));
-                        Ar = A*kron(eye(nr),L);
-                        if length(R) == 1 & length(L) > 1
-                            % L*eye(size(L,2))*r
-                                Ar = A*diag(L(:))*ones(nl*nr,1);   
-                        end
-                        % l r   q r
-                        incadjoint(ops{2},Ar); % by derivative of op2
+                    if ~isempty(Ar)
+                        incadjoint(ops{2},A*Ar);
                     end
                 case 'cos'
                     q = sin(ops{1}.avalue);
@@ -472,51 +342,13 @@ classdef matexp < handle
                     q = cos(ops{1}.avalue);
                     incadjoint(ops{1},A*diag(q(:)));
                 case 'kron'
-                    L = ops{1}.avalue;
-                    R = ops{2}.avalue;
-                    % kron(A,B) = P kron(B,A) Q
-                    % kron(A,B) means expand 
-                    if ops{1}.avarcount > 0               
-                        % kronout = numel(L)*numel(R)
-                        % adjoint A=[outsize, kronout] X=[kronout, numel(R)]
-                        %      lr lc rr rc,   ll lc == 
-                        % TODO finde: P kron(L,?) Q  with P,Q permutations
-                        assert(size(A,2)==numel(L)*numel(R),'kron input adjoint');
-                        q = zeros(size(A,2),numel(L),class(R));
-                        q0 = zeros(size(R,2)*size(L,1)*size(R,1),size(L,1),class(R));
-                        
-                        for I=1:size(R,2)
-                            for J=1:size(L,1)
-                                for K=1:size(R,1)
-                                    q0((I-1)*size(R,1)*size(L,1)+(J-1)*size(R,1)+(K-1)+1,(J-1)+1) = R(K,I);
-                                end
-                            end
-                        end
-                        % replicate
-                        for I=1:size(L,2)
-                            q((I-1)*size(q0,1)+1:I*size(q0,1),(I-1)*size(L,1)+1:I*size(L,1)) = q0;
-                        end
-    
-                        incadjoint(ops{1},A*q);
-
+                    assert(size(A,2)==numel(ops{1}.avalue)*numel(ops{2}.avalue),'kron input adjoint');
+                    [Al,Ar] = matexp.dkron(A,ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    if ~isempty(Al)
+                        incadjoint(ops{1},A*Al);
                     end
-                    if ops{2}.avarcount > 0      
-                        % adjoint A=[outsize, kronout] X=[kronout, numel(L)]
-                        %      lr lc rr rc,   lr lc 
-                        % TODO finde: P kron(L,?) Q  with P,Q permutations
-                        assert(size(A,2)==numel(L)*numel(R),'kron input adjoint');
-                        q = zeros(size(A,2),numel(R),class(L));
-                        bx = size(R,1);
-                        by = size(R,1)*size(L,1)*size(R,2);
-                        for I=1:size(R,2) % along x: each is size(R,1)
-                            for J=1:size(L,2) % along y: each is: size(R,1)*size(L,1)*size(R,2)
-                                for K=1:size(L,1) % long y: each is size(R,1)
-                                    ki = (J-1)*by+1+(K-1)*bx+(I-1)*bx*size(L,1);
-                                    q(ki:ki+bx-1,(I-1)*bx+1:(I-1)*bx+bx) = L(K,J)*eye(bx);
-                                end
-                            end
-                        end                        
-                        incadjoint(ops{2},A*q);
+                    if ~isempty(Ar)
+                        incadjoint(ops{2},A*Ar);
                     end
                 case 'power'
                     assert(ops{2}.avarcount == 0,'power needs to be constant');
@@ -549,8 +381,6 @@ classdef matexp < handle
                          otherwise
                             error('not implemented generic matrix power exponent');%                             
                      end
-%                 case 'logdet'
-%                     incadjoint(ops{1},inv(V)');
                  case 'det'
                      q = inv(value(ops{1}))';
                     incadjoint(ops{1},A*V*q(:)');
@@ -563,7 +393,6 @@ classdef matexp < handle
                 case 'trace'                     
                     q = (eye(length(ops{1}.avalue)));  % was colum(.)'
                     incadjoint(ops{1},A*q(:)');
-%                 case 'vec' % vectorization
                  case 'inv' 
                      % S version for trace: vec'(A) (-kron(V,V')) = vec'(-VAV)
                      % in jfd.pdf there is no negative sign 
@@ -584,17 +413,7 @@ classdef matexp < handle
                     
                     % Taken from: http://www.mathworks.com/matlabcentral/fileexchange/26781-vectorized-transpose-matrix/content/TvecMat.m
                     % note V is the transpose
-                    n = size(V,1); 
-                    m = size(V,2);
-                    d = m*n;
-                    Tmn = zeros(d,d);
-
-                    i = 1:d;
-                    rI = 1+m.*(i-1)-(m*n-1).*floor((i-1)./n);
-                    I1s = sub2ind([d d],rI,1:d);
-                    Tmn(I1s) = 1;
-                    Tmn = Tmn';
-                    
+                    Tmn = matexp.dtranspose(V);
                     incadjoint(ops{1},A*Tmn);
                 case 'vec'
                     % expression from [m,n] to [mn,1] 
@@ -623,10 +442,170 @@ classdef matexp < handle
             % then continue the descent ONLY if meaningful
             for I=1:length(this.aoperands)
                 if this.aoperands{I}.avarcount > 0
-                    mautodiff(this.aoperands{I});
+                    mautodiff(this.aoperands{I},c2);
                 end
             end
         end    
     end
+    methods(Static)
+        % helper for the transposition, returns the Tmn matrix
+        function Tmn = dtranspose(V)
+            n = size(V,1); 
+            m = size(V,2);
+            d = m*n;
+            Tmn = zeros(d,d);
+
+            i = 1:d;
+            rI = 1+m.*(i-1)-(m*n-1).*floor((i-1)./n);
+            I1s = sub2ind([d d],rI,1:d);
+            Tmn(I1s) = 1;
+            Tmn = Tmn';
+        end            
+
+        % helper for the kronecker product for the use in other cases
+        % NOTE: this should be optimized in a way to transform it into some form of product and not picking KI
+        %   e.g. it could be a pair of indices (source,target)
+        function [Al,Ar] = dkron(A,L,R,V,lc,rc)
+            % kron(A,B) = P kron(B,A) Q
+            % kron(A,B) means expand 
+            if lc          
+                % kronout = numel(L)*numel(R)
+                % adjoint A=[outsize, kronout] X=[kronout, numel(R)]
+                %      lr lc rr rc,   ll lc == 
+                % TODO finde: P kron(L,?) Q  with P,Q permutations
+                q = zeros(size(A,2),numel(L),class(R));
+                q0 = zeros(size(R,2)*size(L,1)*size(R,1),size(L,1),class(R));
+                
+                for I=1:size(R,2)
+                    for J=1:size(L,1)
+                        for K=1:size(R,1)
+                            q0((I-1)*size(R,1)*size(L,1)+(J-1)*size(R,1)+(K-1)+1,(J-1)+1) = R(K,I);
+                        end
+                    end
+                end
+                % replicate
+                for I=1:size(L,2)
+                    q((I-1)*size(q0,1)+1:I*size(q0,1),(I-1)*size(L,1)+1:I*size(L,1)) = q0;
+                end
+                Al = q;
+            else
+                Al = []; 
+            end
+            if rc    
+                % adjoint A=[outsize, kronout] X=[kronout, numel(L)]
+                %      lr lc rr rc,   lr lc 
+                % TODO finde: P kron(L,?) Q  with P,Q permutations
+                q = zeros(size(A,2),numel(R),class(L));
+                bx = size(R,1);
+                by = size(R,1)*size(L,1)*size(R,2);
+                for I=1:size(R,2) % along x: each is size(R,1)
+                    for J=1:size(L,2) % along y: each is: size(R,1)*size(L,1)*size(R,2)
+                        for K=1:size(L,1) % long y: each is size(R,1)
+                            ki = (J-1)*by+1+(K-1)*bx+(I-1)*bx*size(L,1);
+                            q(ki:ki+bx-1,(I-1)*bx+1:(I-1)*bx+bx) = L(K,J)*eye(bx);
+                        end
+                    end
+                end                        
+                Ar = q;
+            else
+                Ar = [];
+            end
+        end
+
+        % helper for the matrix product dealing also with scalar expansion
+        % Return empty Al,Ar when constant
+        function [Al,Ar] = dmul(L,R,V,lc,rc)
+            nl = size(V,1); 
+            nr = size(V,2);
+            
+            %Note for fast version: 
+            % LEFT:  vec'(A)(I kron R')   = vec'(R A I) 
+            % RIGHT: vec'(A)(L kron I )   = vec'(I A L)
+            % kron([a,b],[c,d]) is [ac,bd]
+            if lc
+                if length(L) == 1 & length(R) > 1
+                    % R is [nl,nr]
+                    % d y/dx = [a b11  a b12; a b21 a b22; a b31
+                    % ab32] = kron(nl,R) * [nl nl, nl nr] [nl*nr,1 == kron(nl,1,nr,1)] a/dx
+                    %
+                    Al = diag(R(:))*ones(nl*nr,1);   
+                else
+                    %Al = A*kron(eye(nl),R');    
+                    Al = kron(R',eye(nl));
+                end
+            else
+                Al = [];
+            end
+            if rc
+                %Ar = A*kron(L,eye(nr));
+                Ar = kron(eye(nr),L);
+                if length(R) == 1 & length(L) > 1
+                    % L*eye(size(L,2))*r
+                        Ar = diag(L(:))*ones(nl*nr,1);   
+                end
+                % l r   q r
+            else
+                Ar = [];
+            end
+        end
+
+        % helper for the memberwise product with also scalar expansion
+        function [Al,Ar] = dsmul(L,R,V,lc,rc)
+            % L R
+            
+            nl = size(V,1);
+            nr = size(V,2);
+            if lc
+                if length(L) == 1 & length(R) > 1
+                    % enforce enlarge L
+                    Al = diag(R(:))*ones(nl*nr,1); 
+                else
+                    Rt = R';
+                    Al = diag(Rt(:));                        
+                end
+            else
+                Al = [];
+            end
+            if rc
+                if length(R) == 1 & length(L) > 1
+                    % enforce enlarge R
+                    Ar = diag(L(:))*ones(nl*nr,1); 
+                else
+                    Ar = diag(L(:));     
+                end
+            else
+                Ar = [];
+            end
+        end
+        % helper for the memberwise sum
+        function [Al,Ar] = dsum(L,R,lc,rc)
+            if lc 
+                Al = 1;
+            else
+                Al = [];
+            end
+            if rc
+                Ar = 1;
+            else
+                Ar = [];
+            end
+  
+            if length(L) == 1
+                 if length(R) == 1
+                     % both -> do nothing
+                 else
+                     % L is scalar: propagate size of R to L, that
+                     % is: column(eye(numel(R),value=L)) 
+                     % A is [outsize, numel(R)]
+                     % [outsize, numel(R)] * [numel(R), 1]
+                    Al = ones(numel(R),1);
+                 end
+             elseif length(R) == 1
+                  % R is scalar: propagate size of L to R
+                  Ar = ones(numel(L),1);
+             end
+        end
+
+    end 
 end
 
