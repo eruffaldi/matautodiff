@@ -1,0 +1,67 @@
+
+
+H(x' A x) = A+A'
+H(tr AX'BX) = 1/2 (A' kron B + A kron B')
+H(tr X^2)  =  ...
+H(a' X X' a) = ...
+H(inv X) = Kn (X'^-2 kron inv X + inv X' kron X^{-2})
+H(|X|) = ...
+H(f' A f) = ...
+
+
+-------
+Note: The calculation of gradients by nonincremental reverse makes the corresponding computational graph symmetric, a property that should be exploited and maintained in accumulating Hessians.
+-------
+Problem: at the end we have: [k,l,m,n,m,n] where m,n is for all variables, and the whole point that when we accumulate we do accumulate only toward a given one and this means that we should start with [k,l,m1,n1] function (previous adjoint) and getting to ward th end but this is not working
+-------
+
+
+
+http://www.tc.umn.edu/~nydic001/docs/unpubs/Magnus_Matrix_Differentials_Presentation.pdf
+
+http://select.cs.cmu.edu/class/10725-S10/recitations/r4/Matrix_Calculus_Algebra.pdf
+
+http://www.math.harvard.edu/archive/21a_summer_05/handouts/lecture9.pdf
+
+https://books.google.it/books?id=N871f_bp810C&pg=PA353&lpg=PA353&dq=hessian+chain+rule&source=bl&ots=st28mYrWrY&sig=ZNuWzqFIIVmf6Rc6INBh3dmRIU8&hl=en&sa=X&ved=0ahUKEwiA25nOv-HMAhXBJ5oKHdsxA1AQ6AEIITAC#v=onepage&q=hessian%20chain%20rule&f=false
+
+Books:
+
+
+------
+e.g.
+!! X + Y 
+	! X + Y = dX + dY 
+	!! X + Y = 0
+!! (Ax)'C(Dx) = A'CD + D'C'A
+	nb !(Ax)' = Tmn !(Ax) = Tmn kron(A,I) !x
+	! (Ax)'C(Dx) = kron(I,C Dx) !(Ax)' + kron(I,(Ax)') !(CDx) = kron(I, (C Dx)') !()
+	!! (Ax)'C(Dx) = ... !(CDx) !(Ax') + ... !(Ax)' !(CDx) = ... C D !x Tmn kron(A,I) !x + ... Tmn kron(A,I) !x kron(CD,I) !x
+	we need a rule
+		A B C D => A ... C B D  in particular   C D ... Tmn kron(A,I) !x !x
+!! x'x = 2I
+	! x' x = kron(x',I) d(x') + kron(I,x') d x = kron(x',I) Tmn dx + kron(I,x') dx  
+	!! ... d(x') Tmn dx + ... d(x') dx
+!! (Y')
+	! Y' = Tmn dY
+	!! Y' = 0
+
+NOTE: we are not following classic matrix operations but we work with the vectorized operations
+	express matrix multiplication as a linear transformation on matrices
+
+	with A kl,B lm,C mn
+	C = A + B     =>  C: = A: + B:  / idem for the elementwise
+	C = A * B     =>  C: = kron (B',Ik) A: = kron(Im,A) B:
+	C = A * B * C =>  C: = kron (C',A) B: = kron (In, AB) C: = kron(C'B',Ik) A:
+	C = A'        =>  C: = Tmn A:
+
+	we know that
+
+	d(AB): = kron(Im,A) dB: + kron(B',Ik) dA:
+	d(kron(A,B)): = kron(A,dB)+kron(dA,B) = Q(A) dB: + Q(B) dA: with Q special matrix
+	dd(AB): = d(kron(Im,A)) dB: + d(kron(B',Ik)) dA: = Q(Im) dA: dB: + Q(Ik) Tmn dB: dA:
+		se A=(YX)' B=ZX
+		dA = Tmn kron(Y,I) dX:
+		dB = kron(Z,I) dX:
+		Q(Im) Tmn kron(Y,I) dX: kron(Z,I) dX: + Q(Ik) Tmn kron(Z,I) dX: kron(Y,I) dX: ==> A'D+D'A
+		problema: dX: kron(Z,I) dX: == we have dX: on sides
