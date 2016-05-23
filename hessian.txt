@@ -9,7 +9,7 @@ H(|X|) = ...
 H(f' A f) = ...
 
 
--------
+---------
 Note: The calculation of gradients by nonincremental reverse makes the corresponding computational graph symmetric, a property that should be exploited and maintained in accumulating Hessians.
 -------
 Problem: at the end we have: [k,l,m,n,m,n] where m,n is for all variables, and the whole point that when we accumulate we do accumulate only toward a given one and this means that we should start with [k,l,m1,n1] function (previous adjoint) and getting to ward th end but this is not working
@@ -25,8 +25,9 @@ http://www.math.harvard.edu/archive/21a_summer_05/handouts/lecture9.pdf
 
 https://books.google.it/books?id=N871f_bp810C&pg=PA353&lpg=PA353&dq=hessian+chain+rule&source=bl&ots=st28mYrWrY&sig=ZNuWzqFIIVmf6Rc6INBh3dmRIU8&hl=en&sa=X&ved=0ahUKEwiA25nOv-HMAhXBJ5oKHdsxA1AQ6AEIITAC#v=onepage&q=hessian%20chain%20rule&f=false
 
-Books:
+Gower (computation graph): http://www.ime.unicamp.br/rel_pesq/2010/pdf/rp16-10.pdf
 
+Griewank and Walther’s reverse Hessian computation algorithm: 
 
 ------
 e.g.
@@ -52,6 +53,7 @@ NOTE: we are not following classic matrix operations but we work with the vector
 	with A kl,B lm,C mn
 	C = A + B     =>  C: = A: + B:  / idem for the elementwise
 	C = A * B     =>  C: = kron (B',Ik) A: = kron(Im,A) B:
+                      alt: C = (B' A')' => C: = Tmn kron(A,Il) B': = Tmn kron(A,Il) Tkl B:
 	C = A * B * C =>  C: = kron (C',A) B: = kron (In, AB) C: = kron(C'B',Ik) A:
 	C = A'        =>  C: = Tmn A:
 	C = diag(A)   =>  C: = Snn A:     # Snn select the elements that are in the diagonal
@@ -66,4 +68,51 @@ NOTE: we are not following classic matrix operations but we work with the vector
 		se A=(YX)' B=ZX
 		dA = Tmn kron(Y,I) dX:
 		dB = kron(Z,I) dX:
-		Q(Im) Tmn kron(Y,I) dX: kron(Z,I) dX: + Q(Ik) Tmn kron(Z,I) dX: kron(Y,I) dX: ==> Y'Z+Z'Y
+		Q(Im) Tmn kron(Y,I) dX: kron(Z,I) dX: + Q(Ik) Tmn kron(Z,I) dX: kron(Y,I) dX: ==> (Y'Z+Z'Y):
+
+----------------
+
+e.g. (x1x0)(x1+x0)
+output is scalar J is [1,n]
+n lowest level variable => H is [n,n]
+l intermediate steps 
+f=v1v2
+v1=x1x0
+v2=x1+x0
+
+w = state vector [n+l]
+f = selectlast Phi_l * Phi_l-1 .... Phi1 (P' x)  [3]
+	where P puts x in the state vector (first n elements)
+
+Chain rule can be applied to [3] as:
+
+Df' = selectlast' DPhi_l DPhi_l-1 ... DPhi_1 (P'x)P'
+
+--------------------------------------------------------------------
+
+Existing in Julia: http://www.juliadiff.org/
+
+- forward autodiff using Dual numbers or HyperDual numbers for 1st and 2nd, improved in ForwardDiff
+- taylor based is TaylorSeries
+
+- ReverseDiff 
+- ReverseDiffSparse
+
+The most related is: 
+https://github.com/JuliaDiff/ReverseDiffSource.jl
+http://reversediffsourcejl.readthedocs.io/en/master/deriv_rule.html
+
+Defining new functions : @deriv_rule()
+
+DETAIL https://github.com/JuliaDiff/ReverseDiffSource.jl/blob/master/src/rdiff.jl
+
+- high order => multiple variables
+- first perform the first order
+- then reprepare the graph restructuring everything as:
+	byorder	
+		by dg.nodes
+			by n.parents
+
+- what does reversegraph?
+- NOTE: are they working on ...
+

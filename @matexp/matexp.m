@@ -8,7 +8,6 @@ classdef matexp < handle
         aname
         avalue
         aadjoint
-        ahessian
         aop
         aoperands
         avarcount
@@ -42,28 +41,16 @@ classdef matexp < handle
             end
         end
         
-        function autodiff(this,c2)
-            if nargin == 1
-                c2 = 0;
-            end
+        function autodiff(this)
             if isempty(this.avalue)
                 update(this);
             end
             resetadjoint(this,0);
             % [k,m] -> [k,m] => eye [k,m,k,m] => [km,km] jacobian matrix
             this.aadjoint = eye(numel(this.avalue)); 
-            if c2 
-                % [k,m] -> [k,m] => [k,m,k,m,k m] => [km,km*km] hessian
-                this.ahessian = 1; 
-            end
-            mautodiff(this,c2);
+            mautodiff(this);
         end    
-        
-       
-        % final hessian tensor: [k,l,m,n,m,n] stacked as [kl,mn mn] 
-        % but at start we don't know [mn]
-        %this.ahessian = eye(numel(this.avalue));
-        
+                
         % collects the variables present in the expression tree
         function r = collectvars(this)
             r = ucollectvars(this);
@@ -86,7 +73,6 @@ classdef matexp < handle
             for I=1:length(this.aoperands)
                 resetadjoint(this.aoperands{I},x);
             end
-            this.ahessian = x;
             this.aadjoint = x;
         end
 
@@ -280,20 +266,11 @@ classdef matexp < handle
         function r = adjoint(this)
             r = this.aadjoint;
         end
-       
-        % returns adjoint
-        function r = hessian(this)
-            r = this.ahessian;
-        end
 
         function this = incadjoint(this,value)
             this.aadjoint = this.aadjoint + value;
         end
         
-        function this = inchessian(this,value)
-            this.ahessian = this.ahessian + value;
-        end
-
         % sets the value for the constant or variable ones
         function set(this,value)
             assert(isempty(this.aop));
@@ -302,23 +279,19 @@ classdef matexp < handle
     end
     methods (Access=private)
 
-        function mautodiff(this,c2)
+        function mautodiff(this)
             
             ops = this.aoperands;
             A = this.aadjoint;
-            H = this.ahessian;
             V = this.avalue; % this value
             
             % scalar functions f(X) =>  diag(vec(df(X)))
             switch(this.aop)
                 case {'+','-'}
                     % this is trivial except for the case of scalar
-                    [Al,Ar,Hl,Hr] = matexp.dsum(ops{1}.avalue,ops{2}.avalue,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    [Al,Ar] = matexp.dsum(ops{1}.avalue,ops{2}.avalue,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
                     if ~isempty(Al)
                         incadjoint(ops{1},A*Al);
-                        if c2
-                            inchessian(ops{1},H*Hl);
-                        end
                     end
                     if ~isempty(Ar)                       
                         if this.aop == '-'
@@ -326,43 +299,25 @@ classdef matexp < handle
                             Hr = -Hr;
                         end
                         incadjoint(ops{2},A*Ar);
-                        if c2
-                            inchessian(ops{2},H*Hr);
-                        end
                     end
                 case 'u-'
                     incadjoint(ops{1},-A);
-                    if c2
-                        inchessian(ops{2},-H);
-                    end
                 case '.*'
-                    [Al,Ar,Hl,Hr] = matexp.dsmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    [Al,Ar] = matexp.dsmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
                     if ~isempty(Al)
                         incadjoint(ops{1},A*Al);
-                        if c2
-                            inchessian(ops{1},H*Hl);
-                        end
                     end
                     if ~isempty(Ar)
                         incadjoint(ops{2},A*Ar);
-                        if c2
-                            inchessian(ops{2},H*Hr);
-                        end
                     end
                 case '*'
-                    [Al,Ar,Hl,Hr] = matexp.dmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    [Al,Ar] = matexp.dmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
                     % L R   [nl,q] [q,nr] -> [nl,nr]
                     if ~isempty(Al)
                         incadjoint(ops{1},A*Al);
-                        if c2
-                            inchessian(ops{1},H*Hl);
-                        end
                     end
                     if ~isempty(Ar)
                         incadjoint(ops{2},A*Ar);
-                        if c2
-                            inchessian(ops{2},H*Hr);
-                        end
                     end
                 case 'cos'
                     q = sin(ops{1}.avalue);
@@ -471,7 +426,7 @@ classdef matexp < handle
             % then continue the descent ONLY if meaningful
             for I=1:length(this.aoperands)
                 if this.aoperands{I}.avarcount > 0
-                    mautodiff(this.aoperands{I},c2);
+                    mautodiff(this.aoperands{I});
                 end
             end
         end    
@@ -543,11 +498,9 @@ classdef matexp < handle
 
         % helper for the matrix product dealing also with scalar expansion
         % Return empty Al,Ar when constant
-        function [Al,Ar,Hl,Hr] = dmul(L,R,V,lc,rc)
+        function [Al,Ar] = dmul(L,R,V,lc,rc)
             nl = size(V,1); 
             nr = size(V,2);
-            Hl = [];
-            Hr = [];
             
             %Note for fast version: 
             % LEFT:  vec'(A)(I kron R')   = vec'(R A I) 
@@ -581,10 +534,8 @@ classdef matexp < handle
         end
 
         % helper for the memberwise product with also scalar expansion
-        function [Al,Ar,Hl,Hr] = dsmul(L,R,V,lc,rc)
+        function [Al,Ar] = dsmul(L,R,V,lc,rc)
             % L R
-                Hl = [];
-                Hr =[];
             
             nl = size(V,1);
             nr = size(V,2);
@@ -611,20 +562,16 @@ classdef matexp < handle
             end
         end
         % helper for the memberwise sum
-        function [Al,Ar,Hl,Hr] = dsum(L,R,lc,rc)
+        function [Al,Ar] = dsum(L,R,lc,rc)
             if lc 
                 Al = 1;
-                Hl = 1;
             else
                 Al = [];
-                Hl = [];
             end
             if rc
                 Ar = 1;
-                Hr = 1;
             else
                 Ar = [];
-                Hr = [];
             end
   
             if length(L) == 1
