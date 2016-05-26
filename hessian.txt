@@ -116,3 +116,78 @@ DETAIL https://github.com/JuliaDiff/ReverseDiffSource.jl/blob/master/src/rdiff.j
 - what does reversegraph?
 - NOTE: are they working on ...
 
+-----------
+
+f (u(w(x)))
+	k,l for u
+	i,j for w
+J2(f,x,y) = sum_k J(f,uk) J2(uk,x,y) + sum_kl J2(f,uk,ul) J(uk,x,y) J(ul,x,y)
+J2(f,x,y) = 
+	sum_k J(f,uk) (	
+		sum_j J(uk,wj) J2(wj,x,y) 
+		+ 
+		sum_ij J2(uk,wi,wj) 
+			BLOCK1: prefixed with f2_pre
+				sum_i J(uk,wi) J(wi,x)
+				*
+				sum_j J(uk,wj) J(wj,x)
+		) 
+	+ 
+	sum_kl J2(f,uk,ul) 
+		(
+		sum_i J(uk,wi) J(wi,x)  
+		*
+		sum_j J(ul,wj) J(wj,y)
+		)
+
+We propagate J2(wj,*) easy = f2_pre J(f,uk) J(uk,wj) 
+
+We propagate down with J(wi,*)*J(wj,*) taken several times
+	f2_pre  J(f,uk) J2(uk,wi,wj) J(uk,wi) 
+
+Approach of Gawer:
+	The interdependence relations are thus translated into predecessor
+	relations between nodes, and are denoted by the symbol ~<
+
+	foreach i topdown
+		#push
+		foreach p<=i with w(pi) != 0 === traverse all the descendents
+			if p!=i
+				foreach j operands ~< of i
+					w(jp) += (j==p?2:1) J(phi_i,v_j) w(pi)
+			else
+				foreach unordered jk operands ~< of i
+					w(jk) += J(phi_i,v_j) J(phi_i,v_k) w(ii)
+
+		#create: this pushes down, and corresponds to the second part of our expression [[ sum_jk J2(f,uj,uk) J(uj,x) J(uk,y) ]] saying that we propagate down the connection between jk for all the subsequent derivatives
+		foreach unordered j,k operands ~< of i
+			w(jk) += adjoint_i J2(phi_i,vk,vj)
+
+		#second order adjoint corresponding to the down propagation of: sum_k J(f,uk) J2(uk,x,y)
+		foreach j operand ~< of i
+			adjoint_j += adjoint_i J(phi_i,vj)
+
+	output f'' = PWP' 
+		P [n, n+l] with all zero except eye(n) on the left (aka selector)
+
+Matrix Work!
+	each phi_i is: [lir,lic] giving lir*lic=Li with inputs [lkr,lkc] total input sum lkr*lkc = sum Lk
+	final f has index l so Ll
+	adjoint_i is: [Ll,Li]
+	use another support matrix for marking w(pi) != 0 efficient
+
+	w(jk) block in create is: [Ll,Li] * [Li, Lk+Lj] = [Ll,Lk+Lj]   OK and EASY
+
+	w(jk) += J(phi_i,v_j) J(phi_i,v_k) w(ii)
+		[Ll,Lk+Lj] += [Ll, Li+Li] * [Li,Lj] *?* [Li,Lk]
+			if it was tensor: [Ll,Li,Li] ? [Li,Lj] ? [Li,Lk] == [Ll,Li,Lj] ? [Li,Lk] == [Ll,Lk+Lj] MAYBE
+
+	w(jp) += ... J(phi_i,v_j) w(pi)
+		[Ll,Lj+Lp] += [Ll, Lp+Li] *?* [Li,Lj]
+			if it was tensor: [Ll,Lp,Li] * [Li,Lj] = [Ll,Lp,Lj] OK
+
+	Total size of W: we have a block per expressiona (n+l) but each block wjp is [Ll,Lj+Lp], but W should be squared!?
+
+Note: operands can be any (e.g. matrix build)
+
+If we flatten we need to allocate all operands

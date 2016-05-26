@@ -275,9 +275,223 @@ classdef matexp < handle
         function set(this,value)
             assert(isempty(this.aop));
             this.avalue = value;
-        end         
+        end
+        
+        % sets the value for the constant or variable ones
+        function setadjoint(this,a)
+            this.aadjoint = a;
+        end
+
+        % returns all as l expressions
+        function [r,c] = flatten(this)
+            flatten_clear(this);
+            % count all expressions and variables
+            c = flatten_count(this,[0,0]);
+
+            % prepare output cell
+            Phi = cell(c(1)+c(2),2);
+            % wrap in class (or in matexp)
+            tPhi = matexp(Phi);
+            flatten_fill(this,tPhi);
+            % emit reesult with flattened cell
+            r = tPhi.avalue;
+        end
+            
     end
     methods (Access=private)
+        function flatten_fill(this,tPhi)
+            ni = this.aadjoint;
+            if ni < 0
+                ni = size(tPhi.avalue,1)+ni+1; % ni=-1 == last
+            end
+            tPhi.avalue{ni,1} = this;
+            c = zeros(length(this.aoperands),1);
+            for I=1:length(this.aoperands)
+                % assign children identifiers
+                tni = this.aoperands{I}.adjoint;
+                if tni < 0
+                    tni = size(tPhi.avalue,1)+tni+1;
+                end
+                c(I) = tni;
+                flatten_fill(this.aoperands{I},tPhi);
+            end
+            tPhi.avalue{ni,2} = c;
+        end
+        
+        function flatten_clear(this)
+            this.aadjoint = 0;
+            for I=1:length(this.aoperands)
+                flatten_clear(this.aoperands{I});
+            end
+        end
+
+        function c  =  flatten_count(this,c)
+            if this.aadjoint == 0
+                if isempty(this.aop)
+                    c(2) = c(2) + 1;
+                    this.aadjoint = -c(2);
+                else
+                    c(1) = c(1) + 1;
+                    this.aadjoint = c(1);
+                end
+            end
+            for I=1:length(this.aoperands)
+                c = flatten_count(this.aoperands{I},c);
+            end
+        end
+        
+        function r = parder(this,i)
+            ops = this.aoperands;
+            A = this.aadjoint;
+            V = this.avalue; % this value
+            
+            % scalar functions f(X) =>  diag(vec(df(X)))
+            switch(this.aop)
+                case {'+','-'}
+                    % this is trivial except for the case of scalar
+                    [Al,Ar] = matexp.dsum(ops{1}.avalue,ops{2}.avalue,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    if i == 1
+                        if isempty(Al)
+                            r = 0;
+                        else
+                            r = Al;
+                        end
+                    else
+                        if isempty(Ar)
+                            r = 0;
+                        else
+                            r = Ar;
+                        end
+                        if this.aop == '-'  
+                            r = -r;
+                        end
+                    end
+                case 'u-'
+                    r = -1;
+                case '.*'
+%                    [Al,Ar] = matexp.dsmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+%                    if ~isempty(Al)
+%                        incadjoint(ops{1},A*Al);
+%                    end
+%                    if ~isempty(Ar)
+%                        incadjoint(ops{2},A*Ar);
+%                    end
+                case '*'
+                    [Al,Ar] = matexp.dmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    if i == 1
+                            r = 0;
+                        r = Al; 
+                    else
+                        r = Ar;
+                    end
+                        if isempty(r)
+r = 0;
+end
+                case 'cos'
+                    q = sin(ops{1}.avalue);
+                    incadjoint(ops{1},-A*diag(q(:)));
+                case 'sin'
+                    q = cos(ops{1}.avalue);
+                    incadjoint(ops{1},A*diag(q(:)));
+                case 'kron'
+                    assert(size(A,2)==numel(ops{1}.avalue)*numel(ops{2}.avalue),'kron input adjoint');
+                    [Al,Ar] = matexp.dkron(A,ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    if ~isempty(Al)
+                        incadjoint(ops{1},A*Al);
+                    end
+                    if ~isempty(Ar)
+                        incadjoint(ops{2},A*Ar);
+                    end
+                case 'power'
+                    assert(ops{2}.avarcount == 0,'power needs to be constant');
+                    assert(numel(ops{2}.avalue) == 1,'power needs to be scalar');
+                    nexp = ops{2}.avalue;
+                    switch nexp
+                        case 1
+                            % X^1 == X
+                            incadjoint(ops{1},A);
+                        case 2
+                            % X.^2 scalar op
+                            incadjoint(ops{1},2*A*diag(ops{1}.avalue(:)));
+                        otherwise
+                            incadjoint(ops{1},nexp*A*diag(ops{1}.avalue(:).^(nexp-1)));
+                    end
+                 case 'mpower'
+                     assert(ops{2}.avarcount == 0,'power needs to be constant');
+                     switch ops{2}.avalue
+                         case 1
+                             incadjoint(ops{1},A);
+                         case -1
+                             incadjoint(ops{1},-A*kron(V,V'));
+                        case 2 
+                            X = ops{1}.avalue;
+                            Q = eye(length(X));
+                            incadjoint(ops{1},A*(kron(Q,X)+kron(X',Q)));
+                        case 3 
+                            X = ops{1}.avalue;
+                            incadjoint(ops{1},A*(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)));
+                         otherwise
+                            error('not implemented generic matrix power exponent');%                             
+                     end
+                 case 'det'
+                     q = inv(value(ops{1}))';
+                    incadjoint(ops{1},A*V*q(:)');
+                case 'log'
+                    assert(strcmp(ops{1}.aop,'det'),'Only log det supported');
+                    incadjoint(ops{1},A/det(ops{1}.avalue)); % log det (X) = (X^-1'):'                    
+                case 'logdet'
+                    q = inv(value(ops{1}))';
+                    incadjoint(ops{1},A*q(:)'); % log det (X) = (X^-1'):'                    
+                case 'trace'                     
+                    q = (eye(length(ops{1}.avalue)));  % was colum(.)'
+                    incadjoint(ops{1},A*q(:)');
+                 case 'inv' 
+                     % S version for trace: vec'(A) (-kron(V,V')) = vec'(-VAV)
+                     % in jfd.pdf there is no negative sign 
+                     % for dmb it should be: - kron(V',V)
+                     incadjoint(ops{1},-A*kron(V',V));
+                case 'transpose'
+                    % A is [kl, mn] where kl is the final output
+                    % V is [mn, mn]
+                    % we need to apply a permutation matrix that flips the
+                    % mn so that we flip the output
+                    % From dmb this is called TVEC: Tm,n = TVEC(m,n) is the vectorized transpose matrix
+
+                    % X' = unvec(permuterows(vec(X)))
+                    % vec(X') = TVEC(m,n) vec(X)
+                    % vec(X) = A[nm,m] X[m,n] B[n,1]    ?
+                    % unvec(X) = A[m,nm] X[mn,1] B[1,n] ?
+                    % i,jth element is 1 if j=1+m(i-1)-(mn-1)floor((i-1)/n) 
+                    
+                    % Taken from: http://www.mathworks.com/matlabcentral/fileexchange/26781-vectorized-transpose-matrix/content/TvecMat.m
+                    % note V is the transpose
+                    Tmn = matexp.dtranspose(V);
+                    incadjoint(ops{1},A*Tmn);
+                case 'vec'
+                    % expression from [m,n] to [mn,1] 
+                    % adjoint receives [outsize,mn] 
+                    incadjoint(ops{1},A);
+                case 'diag'
+                    % expression from [q,1] to [q,q]
+                    % adjoint receives [outsize,qq] to [q,1] via a matrix [qq,q]
+                    % 
+                    n = length(V);
+                    q = zeros(n*n,n);   
+                    % OPTIMIZE ME
+                    J = 1;
+                    for I=1:n
+                        q(J,I) = 1;
+                        J = J +n+1;
+                    end
+                    incadjoint(ops{1},A*q);
+                case ''  % nothing
+                    r = 1;
+                    return
+                otherwise
+                    error(['Unimplemented ' this.aop]);
+            end
+
+        end
 
         function mautodiff(this)
             
@@ -296,7 +510,6 @@ classdef matexp < handle
                     if ~isempty(Ar)                       
                         if this.aop == '-'
                             Ar = -Ar;
-                            Hr = -Hr;
                         end
                         incadjoint(ops{2},A*Ar);
                     end
@@ -432,6 +645,91 @@ classdef matexp < handle
         end    
     end
     methods(Static)
+        % computes 1st and 2nd using the push edge applied over the flat
+        % version of the algorithm.
+        % 
+        % Requirements: full function evaluated, full funciton flattened
+        % [r,c] = flatten(exp)
+        % r = cell [exps;children]
+        % c = [countops,countvars]
+        %
+        % J is returned inside the adjoint of every variable as in regular
+        % case, H is returned separately in cell form (TBD matrix form)
+        %
+        % sout = topmost output flattened
+        % sin  = sum numel(input) 
+        % Hessian is [sout,sin,sin] that is [outrow,outcol,
+        % [inrow_i,incol_i]_i,...]
+        function [H] = hessianpush(r,c)
+            l = c(1);
+            n = c(2);
+            Wf = zeros(l+n,l+n);
+            W  = cell(l+n,l+n);
+            v = cell(l+n,1);
+            sout = numel(r{1,1}.avalue); % output of topmost
+            for i=2:l+n
+                v{i} = 0; 
+            end
+            v{1} = eye(sout);
+            % first l
+            for i=1:l
+                chi = r{i,2}; % list of children indices
+                % push only in subsequent
+                sm = find(Wf(i,:)); % stored only for row >= col
+                sm = sm(sm >= i);
+                % extract all the parder
+                phide = cell(length(chi),1);
+                % optimize
+                for j=1:length(phide)
+                    phide{j} = parder(r{i,1},j); 
+                end
+                if 1==0
+                for ip=1:length(sm) 
+                    p = sm(ip);
+                    if p ~= i
+                        for ij=1:length(chi)
+                            j = chi(ij);
+                            kap = 1+(j==p);
+                            W{j,p} = W{p,i} * kap * phide{ij};
+                        end
+                    else
+                        % all unordered pairs
+                        for ij=1:length(chi)
+                            j = chi(ij);
+                            for ik=j:length(chi)    
+                                k = chi(ik);
+                                W{j,k} = W{i,i} * phide{ij} * phide{ik};
+                            end
+                        end
+                        
+                    end
+                end
+                % create
+                % all unordered pairs
+                for ij=1:length(chi)
+                    j = chi(ij);
+                    for ik=j:length(chi)    
+                        k = chi(ik);
+                        %w(jk) += adjoint_i J2(phi_i,vk,vj)
+                        W{j,k} = W{j,k} + v{i} * parder2(r{i,1},ij,ik);
+                        Wf(j,k) = any(any(W{j,k} ~= 0));        
+                    end
+                end
+                end
+                % adjoint: parent by children par der 
+                for ij=1:length(chi)
+                    j = chi(ij);
+                    v{j} = v{i}*phide{ij}; % relative child is inside exp 
+                end
+            end
+            % extract J and H
+            H = 0;
+            % assign adjoint to each variable
+            for i=l+1:l+n
+                r{i,1}.setadjoint(v{i});
+            end
+        end
+
         % helper for the transposition, returns the Tmn matrix
         function Tmn = dtranspose(V)
             n = size(V,1); 
@@ -498,7 +796,7 @@ classdef matexp < handle
 
         % helper for the matrix product dealing also with scalar expansion
         % Return empty Al,Ar when constant
-        function [Al,Ar] = dmul(L,R,V,lc,rc)
+        function [Al,Ar] = dmul(L,R,V,lnc,rnc)
             nl = size(V,1); 
             nr = size(V,2);
             
@@ -506,13 +804,16 @@ classdef matexp < handle
             % LEFT:  vec'(A)(I kron R')   = vec'(R A I) 
             % RIGHT: vec'(A)(L kron I )   = vec'(I A L)
             % kron([a,b],[c,d]) is [ac,bd]
-            if lc
+            if lnc
+                % L is scalar, R is not => R output
                 if length(L) == 1 & length(R) > 1
                     % R is [nl,nr]
                     % d y/dx = [a b11  a b12; a b21 a b22; a b31
                     % ab32] = kron(nl,R) * [nl nl, nl nr] [nl*nr,1 == kron(nl,1,nr,1)] a/dx
                     %
                     Al = diag(R(:))*ones(nl*nr,1);   
+                elseif length(L) > 1 & length(R) == 1
+                    Al = R*eye(numel(L));
                 else
                     % D Al = d kron(R', eye(nl)) = ... d(R')
                     Al = kron(R',eye(nl));
@@ -520,14 +821,18 @@ classdef matexp < handle
             else
                 Al = [];
             end
-            if rc
-                %Ar = A*kron(L,eye(nr));
-                Ar = kron(eye(nr),L);
+            if rnc
+                % right is scalar, left is not => output is left sized
                 if length(R) == 1 & length(L) > 1
-                    % L*eye(size(L,2))*r
-                        Ar = diag(L(:))*ones(nl*nr,1);   
+                    Ar = diag(L(:))*ones(nl*nr,1);      
+                % left is scalar, right is not => output is right sized
+                elseif length(R) > 1 & length(L) == 1
+                    % L is scalar, output is R dominated
+                    Ar = L*eye(numel(R));   
+                % regular product
+                else
+                    Ar = kron(eye(nr),L);
                 end
-                % l r   q r
             else
                 Ar = [];
             end
