@@ -312,6 +312,9 @@ classdef matexp < handle
     end
     methods (Access=private)
         function flatten_fill(this,tPhi)
+            if this.aadjoint == 0
+                return
+            end
             ni = this.aadjoint;
             if ni < 0
                 ni = size(tPhi.avalue,1)+ni+1; % ni=-1 == last
@@ -346,6 +349,12 @@ classdef matexp < handle
                     c(2) = c(2) + 1;
                     this.aadjoint = -c(2);
                 else
+                    % MAYBE excluded from the flattening BUT included in the
+                    % three
+                    %if isempty(this.aop)
+                    %    this.aadjoint = 0;
+                    %    return;
+                    %end
                     c(1) = c(1) + 1;
                     this.aadjoint = c(1);
                     for I=1:length(this.aoperands)
@@ -365,16 +374,15 @@ classdef matexp < handle
                 case {'+','-'}
                     % this is trivial except for the case of scalar
                     [Al,Ar] = matexp.dsum(ops{1}.avalue,ops{2}.avalue,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
-                    if isempty(Ar) == 0 & this.aop == '-'
+                    if ~isempty(Ar) & this.aop == '-'
                         Ar = -Ar;
                     end
-                    r = {Al,Ar};
-                    
+                    r = {Al,Ar};                    
                 case 'u-'
                     r = {-1};
                 case 'exp'
                     assert(length(V)==1,'scalar only');
-                    r = {exp(V)};                    
+                    r = {V};                    
                 case '.*'
                     %                    [Al,Ar] = matexp.dsmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
                     %                    if ~isempty(Al)
@@ -502,7 +510,7 @@ classdef matexp < handle
                     r = 0;
                 case 'exp'
                     assert(length(V) == 1); % scalar only
-                    r = exp(V);                    
+                    r = V;                    
                 case '.*'
                     error('unimplemented');
                 case '*'
@@ -552,7 +560,18 @@ classdef matexp < handle
                 case 'power'
                     error('unimplemented');
                 case 'mpower'           
-                    error('unimplemented');
+                    assert(ops{2}.avarcount == 0,'power needs to be constant');
+                    % scalar_f(x)^k
+                    % [1 1] k (k-1) X^(k-2)
+                    % [1 2] 0
+                    % [2 1] 0
+                    % [2 2] 0
+                    if j == 2 || k == 2
+                        r = 0;
+                    else 
+                        k = ops{2}.avalue;
+                        r = k*(k-1)*ops{1}.avalue^(k-2);
+                    end
                 case 'det'
                     error('unimplemented');
                 case 'log'
@@ -599,7 +618,7 @@ classdef matexp < handle
                     end
                 case 'exp'
                     assert(length(V)==1,'exp only scalar');
-                    incadjoint(ops{1},exp(V));
+                    incadjoint(ops{1},A*V);
                 case 'u-'
                     incadjoint(ops{1},-A);
                 case '.*'
@@ -755,7 +774,7 @@ classdef matexp < handle
             l = c(1);
             n = c(2);
             Wf = zeros(l+n,l+n);
-            W  = cell(l+n,l+n);
+            W  = num2cell(zeros(l+n,l+n));
             v = cell(l+n,1);
             sout = numel(r{1,1}.avalue); % output of topmost
             for i=2:l+n
@@ -763,10 +782,10 @@ classdef matexp < handle
             end
             v{1} = eye(sout);
             % first l
-            for i=1:l
+            for i=1:l  
                 chi = r{i,2}; % list of children indices
                 % push only in subsequent
-                sm = find(Wf(i,:)); % non zero descendents (maybe Wf(:,i))
+                sm = find(Wf(i,:)); % non zero descendents or self (maybe Wf(:,i))
                 sm = sm(sm >= i); % p >= i (descendent)
                 phide = parder(r{i,1});
                 for ip=1:length(sm)
@@ -834,11 +853,7 @@ classdef matexp < handle
                             else
                                 w = tprod(v{i},[1,-1],pd2,[-1,2,3]);
                             end
-                            if isempty(W{j,k})
-                                W{j,k} = w;
-                            else
-                                W{j,k} = W{j,k} + w;
-                            end
+                            W{j,k} = W{j,k} + w;
                             % MARK Wf if not null?
                             w = W{j,k};
                             Wf(j,k) = any(w(:) ~= 0);
@@ -849,16 +864,16 @@ classdef matexp < handle
                 % adjoint: parent by children par der
                 for ij=1:length(chi)
                     j = chi(ij);
-                    if isempty(phide{ij}) == 0
-                        v{j} = v{i}*phide{ij}; % relative child is inside exp
+                    if ~isempty(phide{ij})
+                        v{j} = v{j} + v{i}*phide{ij}; % relative child is inside exp
                     end
                 end
             end
             % extract J and H
             H = W(l+1:end,l+1:end); % symmetric with empty=0
-            
-            % assign adjoint to each variable
-            for i=l+1:l+n
+            W
+            % assign adjoint to each target variable
+            for i=l+1:length(v)
                 r{i,1}.setadjoint(v{i});
             end
         end
