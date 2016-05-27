@@ -48,3 +48,39 @@ for I=1:length(mf)
     J_qs
 end
 success
+
+%% Tensor version of the kronecker
+k1 = 2;
+k2 = 3;
+k3 = 5;
+R = symreal('b',[k2,k1]); % 
+q = kron(R',eye(k3));
+cc = cell(size(q,1),size(q,2));
+zz = zeros(size(q,1),size(q,2),numel(R));
+for I=1:size(q,1)
+    for J=1:size(q,2)
+        zz(I,J,:) = double(jacobian(q(I,J),R(:)));
+    end
+end
+W = double(matexp.dkronRT(R,k3,1));
+size(W)==size(zz)
+sum(W(:)-zz(:))
+W1=W;
+%% Tensor version of the kronecker
+k1 = 2;
+k2 = 3;
+k3 = 5;
+L = symreal('b',[k3,k2]); % k3*k1
+q = kron(eye(k1),L);
+cc = cell(size(q,1),size(q,2));
+zz = zeros(size(q,1),size(q,2),numel(L));
+for I=1:size(q,1)
+    for J=1:size(q,2)
+        zz(I,J,:) = double(jacobian(q(I,J),L(:)));
+    end
+end
+
+W = double(matexp.dkronLT(L,k1,1));
+size(W)==size(zz)
+sum(zz(:)-W(:))
+W2=W;

@@ -1,4 +1,4 @@
-
+mysetup tprod
 %% basic test
 clear all
 a = matexp(eye(3));
