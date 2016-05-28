@@ -2,6 +2,8 @@
 % Emanuele Ruffaldi 2016, Scuola Superiore Sant'Anna
 %
 % Provides Reverse-Mode Automatic Differentiation of Matrices
+% with support for Hessian Matrix computation based on edge-push algorithm
+%
 classdef matexp < handle
     
     properties
@@ -160,7 +162,11 @@ classdef matexp < handle
             if ~isa(a,'matexp')
                 a = matexp(a);
             end
-            r = matexp([],'*',{a,b});
+            if a == b
+                r = a^2;
+            else
+                r = matexp([],'*',{a,b});
+            end
         end
         
         function r = times(a,b)
@@ -384,17 +390,11 @@ classdef matexp < handle
                     assert(length(V)==1,'scalar only');
                     r = {V};                    
                 case '.*'
-                    %                    [Al,Ar] = matexp.dsmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
-                    %                    if ~isempty(Al)
-                    %                        incadjoint(ops{1},A*Al);
-                    %                    end
-                    %                    if ~isempty(Ar)
-                    %                        incadjoint(ops{2},A*Ar);
-                    %                    end
+                    [Al,Ar] = matexp.dsmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    r = {Al,Ar};
                 case '*'
                     [Al,Ar] = matexp.dmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
                     r = {Al,Ar};    
-                
                 case 'cos'
                     q = sin(ops{1}.avalue);
                     r = {-diag(q(:))};
@@ -422,20 +422,25 @@ classdef matexp < handle
                     end
                 case 'mpower'
                     assert(ops{2}.avarcount == 0,'power needs to be constant');
-                    switch ops{2}.avalue
-                        case 1
-                            r = {1,[]};
-                        case -1
-                            r = {-kron(V,V'),[]};
-                        case 2
-                            X = ops{1}.avalue;
-                            Q = eye(length(X));
-                            r = {(kron(Q,X)+kron(X',Q)),[]};
-                        case 3
-                            X = ops{1}.avalue;
-                            r = {(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)),[]};
-                        otherwise
-                            error('not implemented generic matrix power exponent');%
+                    if length(ops{1}.avalue) == 1
+                        k = ops{2}.avalue;
+                        r = {k*ops{1}.avalue^(k-1),[]};
+                    else
+                        switch ops{2}.avalue
+                            case 1
+                                r = {1,[]};
+                            case -1
+                                r = {-kron(V,V'),[]};
+                            case 2
+                                X = ops{1}.avalue;
+                                Q = eye(length(X));
+                                r = {(kron(Q,X)+kron(X',Q)),[]};
+                            case 3
+                                X = ops{1}.avalue;
+                                r = {(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)),[]};
+                            otherwise
+                                error('not implemented generic matrix power exponent');%
+                        end
                     end
                 case 'det'
                     q = inv(value(ops{1}))';
@@ -566,7 +571,30 @@ classdef matexp < handle
                 case 'kron'
                     error('will never implement');
                 case 'power'
-                    error('unimplemented');
+                    assert(ops{2}.avarcount == 0,'power needs to be constant');
+                    assert(numel(ops{2}.avalue) == 1,'power needs to be scalar');
+                    % [2,*] = 0
+                    % [*,2] = 0
+                    % [1,1] first order is dimension L (rows*cols), second order is [L,L] each element in first diagonal
+                    %   becomes one more
+                    if j == 2 | k == 2
+                        r = 0;
+                    else
+                        k = ops{2}.avalue;
+                        switch k
+                            case 1
+                                % X^1 == X
+                                r = {1,[]};
+                            otherwise
+                                Q = (k*(k-1))*(ops{1}.avalue).^(k-2);
+                                r = zeros(numel(Q),numel(Q),numel(Q),'like',Q);
+                                Q = Q(:);
+                                % SLOOW
+                                for I=1:length(Q)
+                                    r(I,I,I) = Q(I);
+                                end
+                        end
+                    end
                 case 'mpower'           
                     assert(ops{2}.avarcount == 0,'power needs to be constant');
                     % scalar_f(x)^k
@@ -679,20 +707,25 @@ classdef matexp < handle
                     end
                 case 'mpower'
                     assert(ops{2}.avarcount == 0,'power needs to be constant');
-                    switch ops{2}.avalue
-                        case 1
-                            incadjoint(ops{1},A);
-                        case -1
-                            incadjoint(ops{1},-A*kron(V,V'));
-                        case 2
-                            X = ops{1}.avalue;
-                            Q = eye(length(X));
-                            incadjoint(ops{1},A*(kron(Q,X)+kron(X',Q)));
-                        case 3
-                            X = ops{1}.avalue;
-                            incadjoint(ops{1},A*(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)));
-                        otherwise
-                            error('not implemented generic matrix power exponent');%
+                    if length(ops{1}.avalue) == 1
+                        k = ops{2}.avalue;
+                        incadjoint(ops{1},A*k*ops{1}.avalue^(k-1));
+                    else
+                        switch ops{2}.avalue
+                            case 1
+                                incadjoint(ops{1},A);
+                            case -1
+                                incadjoint(ops{1},-A*kron(V,V'));
+                            case 2
+                                X = ops{1}.avalue;
+                                Q = eye(length(X));
+                                incadjoint(ops{1},A*(kron(Q,X)+kron(X',Q)));
+                            case 3
+                                X = ops{1}.avalue;
+                                incadjoint(ops{1},A*(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)));
+                            otherwise
+                                error('not implemented generic matrix power exponent');%
+                        end
                     end
                 case 'det'
                     q = inv(value(ops{1}))';
@@ -802,6 +835,9 @@ classdef matexp < handle
                     if p ~= i
                         for ij=1:length(chi)
                             j = chi(ij);
+                            if isempty(phide{ij})
+                                continue
+                            end
                             % [Ll,Lj,Lp] += [Ll,Lp,Li] *?* [Li,Lj] = OK
                             % (note reorder jp)
                             % ONLY store row => col
@@ -839,8 +875,14 @@ classdef matexp < handle
                         % all unordered pairs (j and k > i any way)
                         for ij=1:length(chi)
                             j = chi(ij);
+                            if isempty(phide{ij})
+                                continue
+                            end
                             for ik=ij:length(chi)    % can't be 
                                 k = chi(ik);
+                                if isempty(phide{ik})
+                                    continue
+                                end
                                 % Ll is size ouf output
                                 % [Ll,Lk,Lj] += [Ll,Li,Li] * [Li,Lj]
                                 % *?* [Li,Lk] = [L,Li,Lj] *?* [Li,Lk] =
@@ -879,12 +921,13 @@ classdef matexp < handle
                             if ismatrix(pd2)
                                 w = v{i}*pd2;
                             else
+                                % TENSORS not admitted in sym
                                 w = tprod(v{i},[1,-1],pd2,[-1,2,3]);
                             end
                             if j == k
-                                    {'create',j,j}
-                                    r{i,1}
-                                    pd2
+                                    %{'create',j,j}
+                                    %r{i,1}
+                                    %pd2
                                 W{j,j} = W{j,j} + w;
                                 Wf(j,j) = 1; %any(w(:) ~= 0);
                             elseif j > k

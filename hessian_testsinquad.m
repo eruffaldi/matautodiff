@@ -16,7 +16,7 @@
 clear 
 k1 = 1;
 k2 = 1;
-k3 = 2;
+k3 = 1;
 k4 = 1;
 x1s = symreal('x1',k1);
 xns = symreal('xn',k2);
