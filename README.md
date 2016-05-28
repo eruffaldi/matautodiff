@@ -1,4 +1,5 @@
 # Matlab Reverse-Mode Matrix-aware Second Order Automatic Differentiation 
+Emanuele Ruffaldi 2016, Scuola Superiore Sant'Anna
 
 This small package provides a mechanism for performing First and Second order differentiation of Matrix-Matrix functions using the Reverse AutoDifferentiation paradigm. The first order is relatively simple and does not use tensors.
 
