@@ -7,12 +7,12 @@
 classdef matexp < handle
     
     properties
-        aname
-        avalue
-        aadjoint
-        aop
-        aoperands
-        avarcount
+        aname       % name of the variable
+        avalue      % value of constant or in general of the term
+        aadjoint    % adjoint for intermediate, and derivative for terminals
+        aop         % operations string
+        aoperands   % operands
+        avarcount   % number of depending variables
     end
     
     methods
@@ -56,9 +56,9 @@ classdef matexp < handle
         % collects the variables present in the expression tree
         function r = collectvars(this)
             r = ucollectvars(this);
-            % TODO unique
         end
         
+        % INTERNAL recursive of collectvars
         function r = ucollectvars(this)
             r = {};
             if  ~isempty(this.aname)
@@ -70,6 +70,7 @@ classdef matexp < handle
                 end
             end
         end
+        
         % resets he adjoint before autodiff
         function resetadjoint(this,x)
             for I=1:length(this.aoperands)
@@ -128,6 +129,7 @@ classdef matexp < handle
             end
         end
         
+        % Overloading a+b
         function r = plus(a,b)
             if ~isa(b,'matexp')
                 b = matexp(b);
@@ -138,6 +140,7 @@ classdef matexp < handle
             r = matexp([],'+',{a,b});
         end
         
+        % Overloading a-b
         function r = minus(a,b)
             if ~isa(b,'matexp')
                 b = matexp(b);
@@ -148,6 +151,7 @@ classdef matexp < handle
             r = matexp([],'-',{a,b});
         end
         
+        % Overloading -x
         function r = uminus(a)
             if ~isa(a,'matexp')
                 a = matexp(a);
@@ -155,6 +159,7 @@ classdef matexp < handle
             r = matexp([],'u-',{a});
         end
         
+        % Overloading a*b
         function r = mtimes(a,b)
             if ~isa(b,'matexp')
                 b = matexp(b);
@@ -169,6 +174,7 @@ classdef matexp < handle
             end
         end
         
+        % Overloading a.*b
         function r = times(a,b)
             if ~isa(b,'matexp')
                 b = matexp(b);
@@ -179,11 +185,12 @@ classdef matexp < handle
             r = matexp([],'.*',{a,b});
         end
         
+        % Overloading a'
         function r = ctranspose(a)
             r = matexp([],'transpose',{a});
         end
         
-        
+        % Overloading a.^b
         function r = power(a,b)
             if ~isa(a,'matexp')
                 a = matexp(a);
@@ -194,6 +201,8 @@ classdef matexp < handle
             r = matexp([],'power',{a,b});
         end
         
+        % Overloading of accesso a(...) BUT only a(:) supported for
+        % flattening/vec
         function r = subsref(a,S)
             assert(strcmp(S.type,'()'),'Only (:) supported');
             assert(iscell(S.subs) & numel(S) == 1,'Only (:) supported');
@@ -201,6 +210,7 @@ classdef matexp < handle
             r = matexp([],'vec',{a});
         end
         
+        % Overloading a*b
         function r = mpower(a,b)
             if ~isa(a,'matexp')
                 a = matexp(a);
@@ -260,12 +270,10 @@ classdef matexp < handle
             r = matexp([],'sin',{this});
         end
         
-        % size of the value
         function r = size(this)
             r = size(this.avalue);
         end
         
-        % size of the value
         function r = numel(this)
             r = numel(this.avalue);
         end
@@ -275,7 +283,7 @@ classdef matexp < handle
             r = this.avalue;
         end
         
-        % name for variables
+        % name for variables matexp
         function r = name(this)
             r = this.aname;
         end
@@ -285,6 +293,7 @@ classdef matexp < handle
             r = this.aadjoint;
         end
         
+        % INTERNAL: increments adjoint
         function this = incadjoint(this,value)
             this.aadjoint = this.aadjoint + value;
         end
@@ -300,7 +309,15 @@ classdef matexp < handle
             this.aadjoint = a;
         end
         
-        % returns all as l expressions
+        % used in Second Order. Transforms the expression into a flatten
+        % list with two arrays: 
+        %
+        %   r = { allops, 2 }
+        %
+        % First column contains the matexp, second column the list of
+        % depending variables as indices in r
+        %
+        % c = [ops,vars] as counters
         function [r,c] = flatten(this)
             flatten_clear(this);
             % count all expressions and variables
@@ -317,6 +334,7 @@ classdef matexp < handle
         
     end
     methods (Access=private)
+        % Used internally for filling in the flattened form
         function flatten_fill(this,tPhi)
             if this.aadjoint == 0
                 return
@@ -339,6 +357,7 @@ classdef matexp < handle
             tPhi.avalue{ni,2} = c;
         end
         
+        % Used internally for preparing the flattening
         function flatten_clear(this)
             this.aadjoint = [];
             for I=1:length(this.aoperands)
@@ -348,6 +367,7 @@ classdef matexp < handle
             end
         end
         
+        % Used internally for counting variables
         function c  =  flatten_count(this,c)
             if isempty(this.aadjoint)
                 % constant vs var
@@ -370,7 +390,7 @@ classdef matexp < handle
             end
         end
         
-
+        % J(this,*) computes all the partial derivatives
         function r = parder(this)
             ops = this.aoperands;
             V = this.avalue; % this value
@@ -502,7 +522,7 @@ classdef matexp < handle
             
         end
         
-
+        % J(this,j,k) with j,k as indices in operands
         function r = parder2(this,j,k,phide)
             ops = this.aoperands;
             V = this.avalue; % this value
@@ -632,6 +652,8 @@ classdef matexp < handle
             end
             
         end
+        
+        % support function of the recursive AD
         function mautodiff(this)
             
             ops = this.aoperands;
@@ -960,7 +982,10 @@ classdef matexp < handle
             end
         end
         
-        % helper for the transposition, returns the Tmn matrix
+        % Compute the column version form of transposition. That is if we
+        % have a matrix X [m,n] flattened X: [mn,1] and we want to compute
+        % the transpose of X in flattened form (X':) we can apply the
+        % matrix Tmn for this purpose:  (X':) == Tmn X:
         function Tmn = dtranspose(V)
             n = size(V,1);
             m = size(V,2);
@@ -974,7 +999,7 @@ classdef matexp < handle
             Tmn = Tmn';
         end
         
-        % specialized derivative of kron(eye(nr),L)
+        % specialized derivative of kron(eye(nr),L) in Tensor Form
         function Ar = dkronRT(R,nl,rnc)
             k2 = size(R,1);
             k1 = size(R,2);
@@ -999,7 +1024,7 @@ classdef matexp < handle
             end
         end
         
-        % J(kron(eye(nl),L),L)
+        % specialized derivative of kron(kron(eye(nl),L),L) in Tensor Form
         function Al = dkronLT(L,nr,lnc)
             k1 = size(L,1);
             k2 = size(L,2);
@@ -1148,6 +1173,7 @@ classdef matexp < handle
                 Ar = [];
             end
         end
+        
         % helper for the memberwise sum
         function [Al,Ar] = dsum(L,R,lc,rc)
             if lc

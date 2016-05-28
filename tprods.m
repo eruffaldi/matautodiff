@@ -1,4 +1,5 @@
-% einstein summation product of tensor
+% einstein summation product of tensor in Matlab - preliminary code
+%
 %
 % r = tprods(A,iA,B,iB)
 %
@@ -25,4 +26,6 @@ assert( soiBn == length(iBn),'no duplicates');
 assert( all(soiAn) == all(soiBn),'same dimensions');
 assert(length(iAn) == length(iBn),'same summations');
 assert(all(sA(isoiAn),sB(isoiBn)),'same corresponding dimensions');
+
+...
 

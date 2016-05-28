@@ -1,6 +1,6 @@
 
 %%
-% Same as in paper:
+% Scalar function as in paper
 clear 
 k1 = 1;
 k2 = 1;
