@@ -66,6 +66,21 @@ W = double(matexp.dkronRT(R,k3,1));
 size(W)==size(zz)
 sum(W(:)-zz(:))
 W1=W;
+
+%% Tensor version of the kronecker JLL
+k1 = 2;
+k2 = 3;
+k3 = 5;
+L = symreal('a',[k3,k2]); % 
+R = symreal('b',[k2,k1]); % 
+q = kron(R',eye(k3));
+zz = zeros(size(q,1),size(q,2),numel(L));
+for I=1:size(q,1)
+    for J=1:size(q,2)
+        zz(I,J,:) = double(jacobian(q(I,J),L(:)));
+    end
+end
+
 %% Tensor version of the kronecker
 k1 = 2;
 k2 = 3;

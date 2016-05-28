@@ -533,11 +533,19 @@ classdef matexp < handle
                     nl = size(V,1);
                     nr = size(V,2);            
                     if k == j 
+                        % V=L*R
+                        % V=kron(R',eye(nl)) -- kron(eye(nr),L)
+                        % diff(V,L)
+                        % diff(V,R)
                         r = 0;
                     else                                                
-                        if length(ops{2}.avalue) == 1 & length(ops{1}.avalue) == 1
-                            % a*b => b => 1
-                            r = 1;
+                        if length(ops{2}.avalue) == 1 == length(ops{1}.avalue) == 1
+                            % special case?
+                            if ops{2} == ops{1}
+                                r = 2;
+                            else
+                                r = 1;
+                            end
                         else
                             if j == 1 % k==2       
                                 % J(kron(R',eye(nl)),R)
@@ -781,11 +789,12 @@ classdef matexp < handle
                 v{i} = 0;
             end
             v{1} = eye(sout);
-            % first l
+            % In the paper intermediates are reversed and start from top
             for i=1:l  
                 chi = r{i,2}; % list of children indices
                 % push only in subsequent
-                sm = find(Wf(i,:)); % non zero descendents or self (maybe Wf(:,i))
+                sm = find(Wf(:,i)); % non zero descendents or self (maybe Wf(:,i))
+                %sm = 1:length(Wf); % WF above IS BUGGY
                 sm = sm(sm >= i); % p >= i (descendent)
                 phide = parder(r{i,1});
                 for ip=1:length(sm)
@@ -798,39 +807,58 @@ classdef matexp < handle
                             % ONLY store row => col
                             % W{p,i}  [Ll,Lp,Li]
                             % phide{ij} [Li,Lj]
-                            if ndims(W{p,i}) < 3
+                            % p > i                            
+                            if ismatrix(W{p,i})
+                                w = W{p,i}*phide{ij};
+                                {'push',p,j}
                                 if p == j
-                                    W{p,p} = W{p,p} + 2 * W{p,i}*phide{ij};
+                                    W{p,p} = W{p,p} + 2 * w;
+                                    Wf(p,p) = 1;
                                 elseif p > j
-                                    W{p,j} = W{p,j} + W{p,i}*phide{ij};
+                                    W{p,j} = W{p,j} + w;
+                                    Wf(p,j) = 1;
                                 else
-                                    W{j,p} = W{j,p} + W{p,i}*phide{ij};
+                                    W{j,p} = W{j,p} + w;
+                                    Wf(j,p) = 1;
                                 end
                             else
+                                w = tprod(W{p,i},[1,2,-1],phide{ij},[-1,3]);
                                 if p == j
-                                    W{p,p} = W{p,p} + 2 * tprod(W{p,i},[1,2,-1],phide{ij},[-1,3]);
+                                    W{p,p} = W{p,p} + 2 * w;
+                                    Wf(p,p) = 1;
                                 elseif p > j
-                                    W{p,j} = W{p,j} + tprod(W{p,i},[1,2,-1],phide{ij},[-1,3]);
-                                else
-                                    W{j,p} = W{j,p} + tprod(W{p,i},[1,2,-1],phide{ij},[-1,3]);
+                                    W{p,j} = W{p,j} + w;
+                                    Wf(p,j) = 1;
+                                else % j > p
+                                    W{j,p} = W{j,p} + w;
+                                    Wf(j,p) = 1;
                                 end
                             end
                         end
-                    else
+                    else % p == i
                         % all unordered pairs (j and k > i any way)
                         for ij=1:length(chi)
                             j = chi(ij);
-                            for ik=j:length(chi)    % can't be 
+                            for ik=ij:length(chi)    % can't be 
                                 k = chi(ik);
                                 % Ll is size ouf output
                                 % [Ll,Lk,Lj] += [Ll,Li,Li] * [Li,Lj]
                                 % *?* [Li,Lk] = [L,Li,Lj] *?* [Li,Lk] =
                                 % special tensor product
                                 % ALWAYS j>=k
-                                if ndims(W{i,i}) < 3
-                                    W{j,k} = W{j,k} + ((W{i,i}*phide{ij})'*phide{ik})';
+                                if ismatrix(W{i,i})
+                                    w = ((W{i,i}*phide{ij})'*phide{ik})';                                    
                                 else
-                                    W{j,k} = W{j,k} + tprod(tprod(W{i,i},[1,2,-1],phide{ij},[-1,3]),[1,-1,2],phide{ik},[-1,3]);
+                                    w = tprod(tprod(W{i,i},[1,2,-1],phide{ij},[-1,3]),[1,-1,2],phide{ik},[-1,3]);
+                                end
+                                if k > j
+                                    {'pushbi',k,j}
+                                    W{k,j} = W{k,j} + w;
+                                    Wf(k,j) = 1;
+                                else
+                                    {'pushbi',j,k}
+                                    W{j,k} = W{j,k} + w;
+                                    Wf(j,k) = 1;
                                 end
                             end
                         end
@@ -842,21 +870,32 @@ classdef matexp < handle
                 
                 for ij=1:length(chi)
                     j = chi(ij);
-                    for ik=1:length(chi)    % FOR TESTING WE HAVE
+                    for ik=ij:length(chi)    % FOR TESTING WE HAVE
                         k = chi(ik);
                         pd2 = parder2(r{i,1},ij,ik,phide);
-                        if length(pd2) == 1 & pd2 == 0
+                        if length(pd2) == 1 && pd2 == 0
                             % zero
                         else
                             if ismatrix(pd2)
-                                w = v{1}*pd2;
+                                w = v{i}*pd2;
                             else
                                 w = tprod(v{i},[1,-1],pd2,[-1,2,3]);
                             end
-                            W{j,k} = W{j,k} + w;
-                            % MARK Wf if not null?
-                            w = W{j,k};
-                            Wf(j,k) = any(w(:) ~= 0);
+                            if j == k
+                                    {'create',j,j}
+                                    r{i,1}
+                                    pd2
+                                W{j,j} = W{j,j} + w;
+                                Wf(j,j) = 1; %any(w(:) ~= 0);
+                            elseif j > k
+                                    {'create',j,k}
+                                W{j,k} = W{j,k} + w;
+                                Wf(j,k) = 1; %any(w(:) ~= 0);
+                            else
+                                    {'create',k,j}
+                                W{k,j} = W{k,j} + w;
+                                Wf(k,j) = 1; %any(w(:) ~= 0);
+                            end
                         end
                     end
                 end
