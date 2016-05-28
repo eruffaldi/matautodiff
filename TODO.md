@@ -1,19 +1,13 @@
+Test Cases for Hessian:
+- complete sinquad
+
 For Diff
 - add special operation as rotation matrix (e.g. for kinematics) and quaternion operations
 
 For Hessian
-- .*
-- * (should use D kron)
-- scalar function
-- kron (will not implement)
-- power
-- mpower
-- det
-- logdet
-- trace
-- transpose
-- diag
-- vec
+- .^
+- ^
+- remove need for tensor operations => allowing for symbolic testing
 
 Optimize
 - diag

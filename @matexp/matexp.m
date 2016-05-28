@@ -2,15 +2,17 @@
 % Emanuele Ruffaldi 2016, Scuola Superiore Sant'Anna
 %
 % Provides Reverse-Mode Automatic Differentiation of Matrices
+% with support for Hessian Matrix computation based on edge-push algorithm
+%
 classdef matexp < handle
     
     properties
-        aname
-        avalue
-        aadjoint
-        aop
-        aoperands
-        avarcount
+        aname       % name of the variable
+        avalue      % value of constant or in general of the term
+        aadjoint    % adjoint for intermediate, and derivative for terminals
+        aop         % operations string
+        aoperands   % operands
+        avarcount   % number of depending variables
     end
     
     methods
@@ -54,9 +56,9 @@ classdef matexp < handle
         % collects the variables present in the expression tree
         function r = collectvars(this)
             r = ucollectvars(this);
-            % TODO unique
         end
         
+        % INTERNAL recursive of collectvars
         function r = ucollectvars(this)
             r = {};
             if  ~isempty(this.aname)
@@ -68,6 +70,7 @@ classdef matexp < handle
                 end
             end
         end
+        
         % resets he adjoint before autodiff
         function resetadjoint(this,x)
             for I=1:length(this.aoperands)
@@ -126,6 +129,7 @@ classdef matexp < handle
             end
         end
         
+        % Overloading a+b
         function r = plus(a,b)
             if ~isa(b,'matexp')
                 b = matexp(b);
@@ -136,6 +140,7 @@ classdef matexp < handle
             r = matexp([],'+',{a,b});
         end
         
+        % Overloading a-b
         function r = minus(a,b)
             if ~isa(b,'matexp')
                 b = matexp(b);
@@ -146,6 +151,7 @@ classdef matexp < handle
             r = matexp([],'-',{a,b});
         end
         
+        % Overloading -x
         function r = uminus(a)
             if ~isa(a,'matexp')
                 a = matexp(a);
@@ -153,6 +159,7 @@ classdef matexp < handle
             r = matexp([],'u-',{a});
         end
         
+        % Overloading a*b
         function r = mtimes(a,b)
             if ~isa(b,'matexp')
                 b = matexp(b);
@@ -160,9 +167,14 @@ classdef matexp < handle
             if ~isa(a,'matexp')
                 a = matexp(a);
             end
-            r = matexp([],'*',{a,b});
+            if a == b
+                r = a^2;
+            else
+                r = matexp([],'*',{a,b});
+            end
         end
         
+        % Overloading a.*b
         function r = times(a,b)
             if ~isa(b,'matexp')
                 b = matexp(b);
@@ -173,11 +185,12 @@ classdef matexp < handle
             r = matexp([],'.*',{a,b});
         end
         
+        % Overloading a'
         function r = ctranspose(a)
             r = matexp([],'transpose',{a});
         end
         
-        
+        % Overloading a.^b
         function r = power(a,b)
             if ~isa(a,'matexp')
                 a = matexp(a);
@@ -188,6 +201,8 @@ classdef matexp < handle
             r = matexp([],'power',{a,b});
         end
         
+        % Overloading of accesso a(...) BUT only a(:) supported for
+        % flattening/vec
         function r = subsref(a,S)
             assert(strcmp(S.type,'()'),'Only (:) supported');
             assert(iscell(S.subs) & numel(S) == 1,'Only (:) supported');
@@ -195,6 +210,7 @@ classdef matexp < handle
             r = matexp([],'vec',{a});
         end
         
+        % Overloading a*b
         function r = mpower(a,b)
             if ~isa(a,'matexp')
                 a = matexp(a);
@@ -254,12 +270,10 @@ classdef matexp < handle
             r = matexp([],'sin',{this});
         end
         
-        % size of the value
         function r = size(this)
             r = size(this.avalue);
         end
         
-        % size of the value
         function r = numel(this)
             r = numel(this.avalue);
         end
@@ -269,7 +283,7 @@ classdef matexp < handle
             r = this.avalue;
         end
         
-        % name for variables
+        % name for variables matexp
         function r = name(this)
             r = this.aname;
         end
@@ -279,6 +293,7 @@ classdef matexp < handle
             r = this.aadjoint;
         end
         
+        % INTERNAL: increments adjoint
         function this = incadjoint(this,value)
             this.aadjoint = this.aadjoint + value;
         end
@@ -294,7 +309,15 @@ classdef matexp < handle
             this.aadjoint = a;
         end
         
-        % returns all as l expressions
+        % used in Second Order. Transforms the expression into a flatten
+        % list with two arrays: 
+        %
+        %   r = { allops, 2 }
+        %
+        % First column contains the matexp, second column the list of
+        % depending variables as indices in r
+        %
+        % c = [ops,vars] as counters
         function [r,c] = flatten(this)
             flatten_clear(this);
             % count all expressions and variables
@@ -309,8 +332,14 @@ classdef matexp < handle
             r = tPhi.avalue;
         end
         
+        function [H,v] = hessian(this)
+            [r,c] = flatten(this);
+            [H] = matexp.hessianpush(r,c);
+            v = r(c(1)+1:end,1);
+        end
     end
     methods (Access=private)
+        % Used internally for filling in the flattened form
         function flatten_fill(this,tPhi)
             if this.aadjoint == 0
                 return
@@ -333,6 +362,7 @@ classdef matexp < handle
             tPhi.avalue{ni,2} = c;
         end
         
+        % Used internally for preparing the flattening
         function flatten_clear(this)
             this.aadjoint = [];
             for I=1:length(this.aoperands)
@@ -342,6 +372,7 @@ classdef matexp < handle
             end
         end
         
+        % Used internally for counting variables
         function c  =  flatten_count(this,c)
             if isempty(this.aadjoint)
                 % constant vs var
@@ -364,7 +395,7 @@ classdef matexp < handle
             end
         end
         
-
+        % J(this,*) computes all the partial derivatives
         function r = parder(this)
             ops = this.aoperands;
             V = this.avalue; % this value
@@ -384,17 +415,11 @@ classdef matexp < handle
                     assert(length(V)==1,'scalar only');
                     r = {V};                    
                 case '.*'
-                    %                    [Al,Ar] = matexp.dsmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
-                    %                    if ~isempty(Al)
-                    %                        incadjoint(ops{1},A*Al);
-                    %                    end
-                    %                    if ~isempty(Ar)
-                    %                        incadjoint(ops{2},A*Ar);
-                    %                    end
+                    [Al,Ar] = matexp.dsmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
+                    r = {Al,Ar};
                 case '*'
                     [Al,Ar] = matexp.dmul(ops{1}.avalue,ops{2}.avalue,V,ops{1}.avarcount > 0,ops{2}.avarcount > 0);
                     r = {Al,Ar};    
-                
                 case 'cos'
                     q = sin(ops{1}.avalue);
                     r = {-diag(q(:))};
@@ -422,20 +447,25 @@ classdef matexp < handle
                     end
                 case 'mpower'
                     assert(ops{2}.avarcount == 0,'power needs to be constant');
-                    switch ops{2}.avalue
-                        case 1
-                            r = {1,[]};
-                        case -1
-                            r = {-kron(V,V'),[]};
-                        case 2
-                            X = ops{1}.avalue;
-                            Q = eye(length(X));
-                            r = {(kron(Q,X)+kron(X',Q)),[]};
-                        case 3
-                            X = ops{1}.avalue;
-                            r = {(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)),[]};
-                        otherwise
-                            error('not implemented generic matrix power exponent');%
+                    if length(ops{1}.avalue) == 1
+                        k = ops{2}.avalue;
+                        r = {k*ops{1}.avalue^(k-1),[]};
+                    else
+                        switch ops{2}.avalue
+                            case 1
+                                r = {1,[]};
+                            case -1
+                                r = {-kron(V,V'),[]};
+                            case 2
+                                X = ops{1}.avalue;
+                                Q = eye(length(X));
+                                r = {(kron(Q,X)+kron(X',Q)),[]};
+                            case 3
+                                X = ops{1}.avalue;
+                                r = {(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)),[]};
+                            otherwise
+                                error('not implemented generic matrix power exponent');%
+                        end
                     end
                 case 'det'
                     q = inv(value(ops{1}))';
@@ -497,7 +527,7 @@ classdef matexp < handle
             
         end
         
-
+        % J(this,j,k) with j,k as indices in operands
         function r = parder2(this,j,k,phide)
             ops = this.aoperands;
             V = this.avalue; % this value
@@ -566,7 +596,30 @@ classdef matexp < handle
                 case 'kron'
                     error('will never implement');
                 case 'power'
-                    error('unimplemented');
+                    assert(ops{2}.avarcount == 0,'power needs to be constant');
+                    assert(numel(ops{2}.avalue) == 1,'power needs to be scalar');
+                    % [2,*] = 0
+                    % [*,2] = 0
+                    % [1,1] first order is dimension L (rows*cols), second order is [L,L] each element in first diagonal
+                    %   becomes one more
+                    if j == 2 | k == 2
+                        r = 0;
+                    else
+                        k = ops{2}.avalue;
+                        switch k
+                            case 1
+                                % X^1 == X
+                                r = {1,[]};
+                            otherwise
+                                Q = (k*(k-1))*(ops{1}.avalue).^(k-2);
+                                r = zeros(numel(Q),numel(Q),numel(Q),'like',Q);
+                                Q = Q(:);
+                                % SLOOW
+                                for I=1:length(Q)
+                                    r(I,I,I) = Q(I);
+                                end
+                        end
+                    end
                 case 'mpower'           
                     assert(ops{2}.avarcount == 0,'power needs to be constant');
                     % scalar_f(x)^k
@@ -604,6 +657,8 @@ classdef matexp < handle
             end
             
         end
+        
+        % support function of the recursive AD
         function mautodiff(this)
             
             ops = this.aoperands;
@@ -679,20 +734,25 @@ classdef matexp < handle
                     end
                 case 'mpower'
                     assert(ops{2}.avarcount == 0,'power needs to be constant');
-                    switch ops{2}.avalue
-                        case 1
-                            incadjoint(ops{1},A);
-                        case -1
-                            incadjoint(ops{1},-A*kron(V,V'));
-                        case 2
-                            X = ops{1}.avalue;
-                            Q = eye(length(X));
-                            incadjoint(ops{1},A*(kron(Q,X)+kron(X',Q)));
-                        case 3
-                            X = ops{1}.avalue;
-                            incadjoint(ops{1},A*(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)));
-                        otherwise
-                            error('not implemented generic matrix power exponent');%
+                    if length(ops{1}.avalue) == 1
+                        k = ops{2}.avalue;
+                        incadjoint(ops{1},A*k*ops{1}.avalue^(k-1));
+                    else
+                        switch ops{2}.avalue
+                            case 1
+                                incadjoint(ops{1},A);
+                            case -1
+                                incadjoint(ops{1},-A*kron(V,V'));
+                            case 2
+                                X = ops{1}.avalue;
+                                Q = eye(length(X));
+                                incadjoint(ops{1},A*(kron(Q,X)+kron(X',Q)));
+                            case 3
+                                X = ops{1}.avalue;
+                                incadjoint(ops{1},A*(kron((X')^2,eye(length(X)))+kron(X',X)+kron(eye(length(X)),X^2)));
+                            otherwise
+                                error('not implemented generic matrix power exponent');%
+                        end
                     end
                 case 'det'
                     q = inv(value(ops{1}))';
@@ -778,7 +838,7 @@ classdef matexp < handle
         % [inrow_i,incol_i]_i,...]
         %
         % Note: due to the use of tprod we cannot use symbolic (!)
-        function [H] = hessianpush(r,c)
+        function H = hessianpush(r,c)
             l = c(1);
             n = c(2);
             Wf = zeros(l+n,l+n);
@@ -802,6 +862,9 @@ classdef matexp < handle
                     if p ~= i
                         for ij=1:length(chi)
                             j = chi(ij);
+                            if isempty(phide{ij})
+                                continue
+                            end
                             % [Ll,Lj,Lp] += [Ll,Lp,Li] *?* [Li,Lj] = OK
                             % (note reorder jp)
                             % ONLY store row => col
@@ -839,8 +902,14 @@ classdef matexp < handle
                         % all unordered pairs (j and k > i any way)
                         for ij=1:length(chi)
                             j = chi(ij);
+                            if isempty(phide{ij})
+                                continue
+                            end
                             for ik=ij:length(chi)    % can't be 
                                 k = chi(ik);
+                                if isempty(phide{ik})
+                                    continue
+                                end
                                 % Ll is size ouf output
                                 % [Ll,Lk,Lj] += [Ll,Li,Li] * [Li,Lj]
                                 % *?* [Li,Lk] = [L,Li,Lj] *?* [Li,Lk] =
@@ -879,12 +948,13 @@ classdef matexp < handle
                             if ismatrix(pd2)
                                 w = v{i}*pd2;
                             else
+                                % TENSORS not admitted in sym
                                 w = tprod(v{i},[1,-1],pd2,[-1,2,3]);
                             end
                             if j == k
-                                    {'create',j,j}
-                                    r{i,1}
-                                    pd2
+                                    %{'create',j,j}
+                                    %r{i,1}
+                                    %pd2
                                 W{j,j} = W{j,j} + w;
                                 Wf(j,j) = 1; %any(w(:) ~= 0);
                             elseif j > k
@@ -910,14 +980,17 @@ classdef matexp < handle
             end
             % extract J and H
             H = W(l+1:end,l+1:end); % symmetric with empty=0
-            W
             % assign adjoint to each target variable
             for i=l+1:length(v)
                 r{i,1}.setadjoint(v{i});
             end
+            
         end
         
-        % helper for the transposition, returns the Tmn matrix
+        % Compute the column version form of transposition. That is if we
+        % have a matrix X [m,n] flattened X: [mn,1] and we want to compute
+        % the transpose of X in flattened form (X':) we can apply the
+        % matrix Tmn for this purpose:  (X':) == Tmn X:
         function Tmn = dtranspose(V)
             n = size(V,1);
             m = size(V,2);
@@ -931,7 +1004,7 @@ classdef matexp < handle
             Tmn = Tmn';
         end
         
-        % specialized derivative of kron(eye(nr),L)
+        % specialized derivative of kron(eye(nr),L) in Tensor Form
         function Ar = dkronRT(R,nl,rnc)
             k2 = size(R,1);
             k1 = size(R,2);
@@ -956,7 +1029,7 @@ classdef matexp < handle
             end
         end
         
-        % J(kron(eye(nl),L),L)
+        % specialized derivative of kron(kron(eye(nl),L),L) in Tensor Form
         function Al = dkronLT(L,nr,lnc)
             k1 = size(L,1);
             k2 = size(L,2);
@@ -1105,6 +1178,7 @@ classdef matexp < handle
                 Ar = [];
             end
         end
+        
         % helper for the memberwise sum
         function [Al,Ar] = dsum(L,R,lc,rc)
             if lc
