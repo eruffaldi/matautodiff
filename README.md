@@ -24,8 +24,6 @@ Here a brief example of first order
 
 The second order uses another approach and it can be used to compute first and second order at once (so no need to call autodiff)
 
-<<<<<<< HEAD
-=======
     ...
     [H,v] = hessian(f);
     % H is a cell array lower triangular (due to symmetrix of the Hessian Matrix) 
