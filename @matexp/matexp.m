@@ -332,6 +332,11 @@ classdef matexp < handle
             r = tPhi.avalue;
         end
         
+        function [H,v] = hessian(this)
+            [r,c] = flatten(this);
+            [H] = matexp.hessianpush(r,c);
+            v = r(c(1)+1:end,1);
+        end
     end
     methods (Access=private)
         % Used internally for filling in the flattened form
@@ -833,7 +838,7 @@ classdef matexp < handle
         % [inrow_i,incol_i]_i,...]
         %
         % Note: due to the use of tprod we cannot use symbolic (!)
-        function [H] = hessianpush(r,c)
+        function H = hessianpush(r,c)
             l = c(1);
             n = c(2);
             Wf = zeros(l+n,l+n);
@@ -975,11 +980,11 @@ classdef matexp < handle
             end
             % extract J and H
             H = W(l+1:end,l+1:end); % symmetric with empty=0
-            W
             % assign adjoint to each target variable
             for i=l+1:length(v)
                 r{i,1}.setadjoint(v{i});
             end
+            
         end
         
         % Compute the column version form of transposition. That is if we

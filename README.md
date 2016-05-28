@@ -24,6 +24,17 @@ Here a brief example of first order
 
 The second order uses another approach and it can be used to compute first and second order at once (so no need to call autodiff)
 
+    ...
+    [H,v] = hessian(f);
+    % H is a cell array lower triangular (due to symmetrix of the Hessian Matrix) 
+    % each cell (i,j) is the tensor [mn_f,mn_i,mn_j] where i and j are two variables 
+    % 
+    % v is the cell array with the variables in H (as matexp) ordered depending on the descent of the three
+    % the first order is stored in the adjoints of each variable
+
+    adjoint(b); % contains the J(f,b) flattened as computed by hessianpush
+
+
 # Note about tensors
 
 Tensors (multidimensional array) are useful for representing jacobians of matrix-matrix functions. A generic matrix function F depends
@@ -61,7 +72,7 @@ Second order: there are several operations not yet supported, and also we rely o
 we cannot use symbolic toolbox verification, and we rely on the tprod function provided on file exchange and update in this github: 
 https://github.com/eruffaldi/tprod.
 
-
+Second order: provide a way to order the output variables in H
 
 
 
