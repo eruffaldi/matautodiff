@@ -74,7 +74,17 @@ The Hessian Matrix is computed using edge push algorithm that streamline and sim
 
 # Tests
 
-First order is tested in multi_test that takes many expressions and compare them against symbolic toolbox
+Basic test and first order example is matexp_test
+
+First order is tested in multi_test.m that takes many expressions and compare them against symbolic toolbox
+
+Second order (under testing) is:
+- hessian_test
+- hessian_testsc
+- hessian_testsinquad
+
+Additional tools are in d2_test, kron_test
+
 
 # References
 
@@ -83,5 +93,5 @@ Test functions: http://camo.ici.ro/journal/vol10/v10a10.pdf
 Matrix Calculus Functions: http://www.ee.ic.ac.uk/hp/staff/dmb/matrix/calculus.html
 
 Edge-push papers
-1) Gower, R. M., and M. P. Mello. "A new framework for the computation of Hessians." Optimization Methods and Software 27.2 (2012): 251-273.
-2) (public) Gower, Robert Mansel, and Margarida P. Mello. Hessian matrices via automatic differentiation. Universidade Estadual de Campinas, Instituto de Matem?tica, Estat?stica e Computa??o Cient?fica, 2010.
+* Gower, R. M., and M. P. Mello. "A new framework for the computation of Hessians." Optimization Methods and Software 27.2 (2012): 251-273.
+* (public) Gower, Robert Mansel, and Margarida P. Mello. Hessian matrices via automatic differentiation. Universidade Estadual de Campinas, Instituto de Matem?tica, Estat?stica e Computa??o Cient?fica, 2010.
