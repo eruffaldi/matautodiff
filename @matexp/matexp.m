@@ -582,11 +582,11 @@ classdef matexp < handle
                             if j == 1 % k==2       
                                 % J(kron(R',eye(nl)),R) as matrix
                                 r = matexp.dkronR(ops{2}.avalue,nl,ops{2}.avarcount > 0);
-                                assert(all(size(r) == [nl*nr,numel(ops{1}.avalue),numel(ops{2}.avalue)]));
+                                assert(all(size(r) == [nl*nr,numel(ops{1}.avalue)*numel(ops{2}.avalue)]));
                             else % j == 2, k == 1
                                 % J(kron(eye(nr),L),L) as matrix
                                 r = matexp.dkronL(ops{1}.avalue,nr,ops{1}.avarcount > 0);
-                                assert(all(size(r) == [nl*nr,numel(ops{2}.avalue),numel(ops{1}.avalue)]));
+                                assert(all(size(r) == [nl*nr,numel(ops{2}.avalue)*numel(ops{1}.avalue)]));
                             end
                         end
                     end
