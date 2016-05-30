@@ -527,10 +527,12 @@ classdef matexp < handle
             
         end
         
-        % J(this,j,k) with j,k as indices in operands
+        % J(this,j,k) with j,k as indices in operands, eventually using the
+        % previos partial derivatives
         function r = parder2(this,j,k,phide)
-            ops = this.aoperands;
+            ops = this.aoperands; % operands
             V = this.avalue; % this value
+            J = phide;       % cell array of all partial derivatives
             
             % scalar functions f(X) =>  diag(vec(df(X)))
             switch(this.aop)
@@ -539,10 +541,10 @@ classdef matexp < handle
                 case 'u-'
                     r = 0;
                 case 'exp'
-                    assert(length(V) == 1); % scalar only
+                    assert(length(V) == 1,'only scalar for exp');
                     r = V;                    
                 case '.*'
-                    error('unimplemented');
+                    error('scalar produce not implemented');
                 case '*'
                     % Operation: L*R
                     %
@@ -578,46 +580,55 @@ classdef matexp < handle
                             end
                         else
                             if j == 1 % k==2       
-                                % J(kron(R',eye(nl)),R)
-                                r = matexp.dkronRT(ops{2}.avalue,nl,ops{2}.avarcount > 0);
+                                % J(kron(R',eye(nl)),R) as matrix
+                                r = matexp.dkronR(ops{2}.avalue,nl,ops{2}.avarcount > 0);
                                 assert(all(size(r) == [nl*nr,numel(ops{1}.avalue),numel(ops{2}.avalue)]));
                             else % j == 2, k == 1
-                                % J(kron(eye(nr),L),L)
-                                r = matexp.dkronLT(ops{1}.avalue,nr,ops{1}.avarcount > 0);
+                                % J(kron(eye(nr),L),L) as matrix
+                                r = matexp.dkronL(ops{1}.avalue,nr,ops{1}.avarcount > 0);
                                 assert(all(size(r) == [nl*nr,numel(ops{2}.avalue),numel(ops{1}.avalue)]));
                             end
                         end
                     end
                     
                 case 'cos'
+                    error('not implemented, use general case of scalar dependency');
                     r = 0;
                 case 'sin'
+                    error('not implemented, use general case of scalar dependency');
                     r = 0;
                 case 'kron'
                     error('will never implement');
-                case 'power'
+                case 'power' % scalar power .^
                     assert(ops{2}.avarcount == 0,'power needs to be constant');
                     assert(numel(ops{2}.avalue) == 1,'power needs to be scalar');
                     % [2,*] = 0
                     % [*,2] = 0
                     % [1,1] first order is dimension L (rows*cols), second order is [L,L] each element in first diagonal
                     %   becomes one more
-                    if j == 2 | k == 2
+                    if j == 2 || k == 2
                         r = 0;
                     else
                         k = ops{2}.avalue;
                         switch k
                             case 1
-                                % X^1 == X
-                                r = {1,[]};
+                                % X => 1 => 0
+                                r = 0;
                             otherwise
+                                q = numel(V);
                                 Q = (k*(k-1))*(ops{1}.avalue).^(k-2);
-                                r = zeros(numel(Q),numel(Q),numel(Q),'like',Q);
-                                Q = Q(:);
-                                % SLOOW
-                                for I=1:length(Q)
-                                    r(I,I,I) = Q(I);
-                                end
+                                r = zeros(q,q*q,'like',V);
+                                r(sub2ind(size(r),1:q,((1:q)-1)*(q+1)+1)) = Q(:);
+                                %ALT with for
+                                %Q = Q(:);
+                                %for I=1:length(Q)
+                                %    r(I,(I-1)*(numel(V)+1)+1) = Q(I);
+                                %end
+                                %
+                                %ALT Tensor version
+                                %for I=1:length(Q)
+                                %    r(I,I,I) = Q(I);
+                                %end
                         end
                     end
                 case 'mpower'           
@@ -885,6 +896,7 @@ classdef matexp < handle
                                     Wf(j,p) = 1;
                                 end
                             else
+                                error('new version without tensors')
                                 w = tprod(W{p,i},[1,2,-1],phide{ij},[-1,3]);
                                 if p == j
                                     W{p,p} = W{p,p} + 2 * w;
@@ -918,6 +930,7 @@ classdef matexp < handle
                                 if ismatrix(W{i,i})
                                     w = ((W{i,i}*phide{ij})'*phide{ik})';                                    
                                 else
+                                    error('new version without tensors')
                                     w = tprod(tprod(W{i,i},[1,2,-1],phide{ij},[-1,3]),[1,-1,2],phide{ik},[-1,3]);
                                 end
                                 if k > j
@@ -948,6 +961,7 @@ classdef matexp < handle
                             if ismatrix(pd2)
                                 w = v{i}*pd2;
                             else
+                                error('new version without tensors')
                                 % TENSORS not admitted in sym
                                 w = tprod(v{i},[1,-1],pd2,[-1,2,3]);
                             end
@@ -1006,6 +1020,7 @@ classdef matexp < handle
         
         % specialized derivative of kron(eye(nr),L) in Tensor Form
         function Ar = dkronRT(R,nl,rnc)
+            error('replaced tensor with matrix flattening');
             k2 = size(R,1);
             k1 = size(R,2);
             k3 = nl;
@@ -1031,6 +1046,7 @@ classdef matexp < handle
         
         % specialized derivative of kron(kron(eye(nl),L),L) in Tensor Form
         function Al = dkronLT(L,nr,lnc)
+            %error('replaced tensor with matrix flattening');
             k1 = size(L,1);
             k2 = size(L,2);
             k3 = nr;
@@ -1053,6 +1069,69 @@ classdef matexp < handle
                 Al = [];
             end
         end
+        
+        
+        % specialized derivative of kron(kron(eye(nl),L),L) in Matrix Form
+        % [topfunction,R size,L size] => [topfunction, Rsize stack Lsize]
+        function Al = dkronL(L,nr,lnc)
+            k1 = size(L,1);
+            k2 = size(L,2);
+            k3 = nr;
+            if lnc
+                % adjoint A=[outsize, kronout] X=[kronout, numel(L)]
+                %      lr lc rr rc,   lr lc
+                % TODO finde: P kron(L,?) Q  with P,Q permutations
+                ss = [k2*k3,k1*k2];
+                q = zeros(k1*k3,ss(1)*ss(2),'like',L);
+                %
+                % repeat k2 times (shifting right by k1*k3*k2)
+                %   repeat k1 times (shifting down by 1)
+                %       total items k3:
+                %           horizontal by k2
+                %           vertical by k1
+                for J=1:k2
+                    ox = k1*k3*k2*(J-1);
+                    for I=1:k1
+                        oy = I-1;
+                        q(sub2ind(size(q),1+oy+((1:k3)-1)*k1,1+ox+((1:k3)-1)*k2)) = 1;
+                    end
+                end
+                        
+                Al = q;
+            else
+                Al = [];
+            end
+        end
+        
+        % specialized derivative of kron(eye(nr),L) in Matrix Form
+        % [topfunction,L size,R size] => [topfunction, Lsize stack Rsize]
+        function Ar = dkronR(R,nl,rnc)
+            k2 = size(R,1);
+            k1 = size(R,2);
+            k3 = nl;
+            if rnc
+                % adjoint A=[outsize, kronout] X=[kronout, numel(L)]
+                %      lr lc rr rc,   lr lc
+                % TODO finde: P kron(L,?) Q  with P,Q permutations
+                q = zeros(k1*k3,k3*k2 * k1*k2,'like',R);
+                t = eye(k3,'like',R);
+                
+                % inner loop: k2 times shifting k1*k1*k3 hor
+                % outer loop: k3 times shifting of k1 ver
+                
+                for J=1:k1
+                    oy = (J-1)*k3;
+                    for I=1:k2
+                        ox = (I-1)*k1*k1*k3;
+                        q(oy+(1:k3),ox+(1:k3)) = t;
+                    end
+                end
+                Ar = q;
+            else
+                Ar = [];
+            end
+        end
+        
                 
         
         % helper for the kronecker product for the use in other cases

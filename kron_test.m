@@ -67,7 +67,27 @@ size(W)==size(zz)
 sum(W(:)-zz(:))
 W1=W;
 
-%% Tensor version of the kronecker JLL
+
+%% Matrix version of the kronecker
+k1 = 2;
+k2 = 3;
+k3 = 5;
+R = symreal('b',[k2,k1]); % 
+q = kron(R',eye(k3));
+zz = zeros(size(q,1),size(q,2),numel(R));
+for I=1:size(q,1)
+    for J=1:size(q,2)
+        % equivalent zz(I,sub2ind([size(q,2),numel(L)],repmat(J,1,numel(L)),1:numel(L))) = double(jacobian(q(I,J),L(:)));
+        zz(I,J,:) = double(jacobian(q(I,J),R(:)));
+    end
+end
+zz = reshape(zz,size(zz,1),[]);
+W = double(matexp.dkronR(R,k3,1));
+size(W)==size(zz)
+sum(W(:)-zz(:))
+W1=W;
+
+%% Tensor version of the kronecker JLL general
 k1 = 2;
 k2 = 3;
 k3 = 5;
@@ -94,8 +114,28 @@ for I=1:size(q,1)
         zz(I,J,:) = double(jacobian(q(I,J),L(:)));
     end
 end
-
+zz2 = reshape(zz,size(q,1),[]);
 W = double(matexp.dkronLT(L,k1,1));
+size(W)==size(zz)
+sum(zz(:)-W(:))
+W2=W;
+
+
+%% Matrix version of the kronecker
+k1 = 2;
+k2 = 3;
+k3 = 5;
+L = symreal('b',[k3,k2]); % k3*k1
+q = kron(eye(k1),L);
+zz = zeros(size(q,1),size(q,2)*numel(L));
+for I=1:size(q,1)
+    for J=1:size(q,2)
+        zz(I,sub2ind([size(q,2),numel(L)],repmat(J,1,numel(L)),1:numel(L))) = double(jacobian(q(I,J),L(:)));
+    end
+end
+%zz = reshape(zz,size(zz,1),[]);
+
+W = double(matexp.dkronL(L,k1,1));
 size(W)==size(zz)
 sum(zz(:)-W(:))
 W2=W;
